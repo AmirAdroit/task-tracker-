@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Quest HUD</title>
+<style>
+  :root{
+    --panel-alpha:0.60;
+    --bg-panel: rgba(18,18,22,var(--panel-alpha));
+    --bg-slab: rgba(255,255,255,0.05);
+    --bg-slab-hi: rgba(255,255,255,0.09);
+    --border-soft: rgba(255,255,255,0.11);
+    --border: rgba(255,255,255,0.18);
+    --text: #ededf2; --text-dim:#9a9aa4; --accent:#6e8efb; --xp:#6e8efb; --xp-2:#9db4ff; --good:#7fd08a;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;background:transparent;
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;color:var(--text);
+    -webkit-font-smoothing:antialiased;overflow:hidden;user-select:none;}
+
+  .panel{height:100vh;width:100vw;background:var(--bg-panel);
+    backdrop-filter:blur(11px);-webkit-backdrop-filter:blur(11px);
+    border:1px solid var(--border-soft);border-top:none;border-radius:0 0 12px 12px;
+    padding:11px 12px 13px;display:flex;flex-direction:column;gap:11px;}
+  .panel.solid{background:rgb(24,24,28);backdrop-filter:none;-webkit-backdrop-filter:none;}
+
+  .head{display:flex;align-items:center;gap:10px;}
+  .avatar{width:40px;height:40px;border-radius:50%;flex:none;background:#2a2a33;border:1px solid var(--border);
+    display:flex;align-items:center;justify-content:center;font-weight:600;font-size:16px;color:var(--accent);}
+  .who{flex:1;min-width:0;}
+  .who .name{font-weight:600;font-size:15px;line-height:1.1;}
+  .who .sub{font-size:11px;color:var(--text-dim);display:flex;gap:7px;align-items:center;margin-top:3px;}
+  .lvl-pill{font-weight:600;font-size:11px;color:#10131c;background:var(--accent);padding:1px 7px;border-radius:20px;}
+  .hbtns{display:flex;gap:5px;}
+  .ibtn{width:24px;height:24px;border-radius:7px;border:1px solid var(--border-soft);background:var(--bg-slab);
+    color:var(--text-dim);cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;transition:.15s;}
+  .ibtn:hover{background:var(--bg-slab-hi);color:var(--text);}
+
+  .settings{display:none;flex-direction:column;gap:9px;background:var(--bg-slab);border:1px solid var(--border-soft);
+    border-radius:9px;padding:10px;}
+  .settings.open{display:flex;}
+  .setrow{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--text-dim);}
+  .setrow .grow{flex:1;}
+  .toggle{position:relative;width:38px;height:20px;border-radius:20px;background:rgba(255,255,255,0.15);
+    cursor:pointer;transition:.15s;flex:none;}
+  .toggle.on{background:var(--accent);}
+  .toggle::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;
+    background:#fff;transition:.15s;}
+  .toggle.on::after{left:20px;}
+  input[type=range]{flex:1;accent-color:var(--accent);}
+  .linkbtn{border:1px solid var(--accent);color:var(--accent);background:transparent;border-radius:8px;
+    padding:6px 10px;font-size:12px;font-family:inherit;cursor:pointer;width:100%;}
+  .linkbtn:hover{background:var(--bg-slab-hi);}
+
+  .bars{display:flex;flex-direction:column;gap:6px;}
+  .bar-row{display:flex;align-items:center;gap:8px;}
+  .bar-label{font-size:10px;color:var(--text-dim);width:24px;text-transform:uppercase;letter-spacing:.6px;}
+  .bar{flex:1;height:7px;border-radius:20px;overflow:hidden;background:rgba(0,0,0,0.35);border:1px solid var(--border-soft);}
+  .bar>span{display:block;height:100%;border-radius:20px;background:linear-gradient(90deg,var(--xp),var(--xp-2));}
+  .bar-val{font-size:10px;color:var(--text-dim);width:66px;text-align:right;font-variant-numeric:tabular-nums;}
+  .gold-line{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);}
+  .gold-line .g{font-weight:600;color:var(--text);font-variant-numeric:tabular-nums;font-size:13px;}
+
+  .sec-title{font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--text-dim);
+    display:flex;align-items:center;gap:7px;margin:1px 0;}
+  .sec-title::before{content:"";flex:none;width:11px;height:1px;background:var(--accent);opacity:.5;}
+  .sec-title .count{margin-left:auto;letter-spacing:0;font-size:10px;}
+
+  .scroll{overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding-right:2px;}
+  .scroll::-webkit-scrollbar{width:5px;}
+  .scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:5px;}
+  .quests{flex:1;min-height:60px;}
+  .log{max-height:108px;}
+
+  .quest{background:var(--bg-slab);border:1px solid var(--border-soft);border-left:2px solid var(--diff,#888);
+    border-radius:8px;padding:7px 9px;display:flex;flex-direction:column;gap:4px;}
+  .quest.active{background:var(--bg-slab-hi);border-color:var(--border);}
+  .q-top{display:flex;align-items:flex-start;gap:7px;}
+  .q-title{font-size:12.5px;font-weight:500;line-height:1.25;flex:1;}
+  .q-rep{flex:none;font-size:9px;color:var(--accent);border:1px solid var(--border-soft);border-radius:5px;padding:0 4px;}
+  .q-x{flex:none;color:var(--text-dim);cursor:pointer;font-size:12px;line-height:1;padding:1px 2px;border-radius:5px;}
+  .q-x:hover{color:#e88;background:var(--bg-slab-hi);}
+  .q-obj{font-size:11px;color:var(--text-dim);line-height:1.3;}
+  .q-meta{display:flex;align-items:center;gap:9px;font-size:10.5px;color:var(--text-dim);}
+  .reward .xp-tag{color:var(--xp-2);}
+  .timer{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--accent);font-weight:600;}
+  .q-actions{display:flex;gap:5px;}
+  .qbtn{font-size:11px;font-weight:500;cursor:pointer;border-radius:7px;padding:3px 9px;
+    border:1px solid var(--border-soft);background:var(--bg-slab-hi);color:var(--text);transition:.15s;}
+  .qbtn:hover{filter:brightness(1.18);}
+  .qbtn.start{border-color:var(--accent);color:var(--accent);}
+  .qbtn.done{border-color:rgba(127,208,138,0.5);color:var(--good);}
+
+  .logitem{display:flex;align-items:center;gap:8px;font-size:11.5px;padding:4px 1px;border-bottom:1px solid var(--border-soft);}
+  .logitem:last-child{border-bottom:none;}
+  .logitem .chk{color:var(--good);flex:none;}
+  .logitem .lt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .logitem .ld,.logitem .lw{color:var(--text-dim);font-size:10.5px;font-variant-numeric:tabular-nums;}
+
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
+  .stat{background:var(--bg-slab);border:1px solid var(--border-soft);border-radius:8px;padding:6px 4px;text-align:center;}
+  .stat .v{font-weight:600;font-size:14px;font-variant-numeric:tabular-nums;}
+  .stat .k{font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.4px;margin-top:1px;}
+
+  .ach{display:flex;gap:6px;flex-wrap:wrap;}
+  .badge{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;
+    border:1px solid var(--border-soft);background:var(--bg-slab);color:var(--text-dim);position:relative;}
+  .badge.on{color:var(--accent);border-color:var(--border);background:var(--bg-slab-hi);}
+  .badge .tip{position:absolute;bottom:36px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.88);color:#fff;
+    font-size:10.5px;padding:4px 7px;border-radius:6px;white-space:nowrap;opacity:0;pointer-events:none;transition:.15s;z-index:5;}
+  .badge:hover .tip{opacity:1;}
+
+  .add{display:flex;gap:5px;}
+  .add input{flex:1;background:var(--bg-slab);border:1px solid var(--border-soft);border-radius:8px;color:var(--text);
+    padding:6px 9px;font-size:12px;font-family:inherit;outline:none;}
+  .add input:focus{border-color:var(--accent);}
+  .add input::placeholder{color:var(--text-dim);}
+  .add button{border:1px solid var(--accent);color:var(--accent);background:transparent;border-radius:8px;width:32px;cursor:pointer;font-size:15px;}
+  .add button:hover{background:var(--bg-slab-hi);}
+
+  .collapsed .collapsible{display:none;}
+  .toast{position:absolute;top:10px;left:50%;transform:translateX(-50%) translateY(-16px);background:rgba(20,22,30,0.95);
+    border:1px solid var(--accent);color:var(--accent);font-weight:600;letter-spacing:.5px;padding:7px 16px;border-radius:10px;
+    opacity:0;pointer-events:none;transition:.3s;z-index:50;font-size:13px;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+  <div class="panel" id="panel">
+    <div class="head">
+      <div class="avatar">X</div>
+      <div class="who">
+        <div class="name">Xerex</div>
+        <div class="sub"><span class="lvl-pill">Lv <span id="lvl">1</span></span><span id="title-line">Adventurer</span></div>
+      </div>
+      <div class="hbtns">
+        <button class="ibtn" id="gearBtn" title="Settings">⚙</button>
+        <button class="ibtn" id="collapseBtn" title="Collapse">▾</button>
+      </div>
+    </div>
+
+    <div class="settings" id="settings">
+      <div class="setrow"><span class="grow">Solid background</span><div class="toggle" id="solidToggle"></div></div>
+      <div class="setrow"><span>Opacity</span><input type="range" id="opacity" min="40" max="100" value="100"><span id="opval" style="width:34px;text-align:right;">100%</span></div>
+      <button class="linkbtn" id="openPanelBtn">Open control panel ↗</button>
+    </div>
+
+    <div class="bars">
+      <div class="bar-row"><span class="bar-label">XP</span><div class="bar"><span id="xpfill" style="width:0%"></span></div><span class="bar-val" id="xpval">0 / 100</span></div>
+      <div class="gold-line"><span>◉</span><span class="g" id="gold">0</span><span>gold</span></div>
+    </div>
+
+    <div class="collapsible" style="display:flex;flex-direction:column;gap:11px;flex:1;min-height:0;">
+      <div style="display:flex;flex-direction:column;flex:1;min-height:0;">
+        <div class="sec-title">Active quests <span class="count" id="qcount">0</span></div>
+        <div class="scroll quests" id="questList"></div>
+      </div>
+      <div class="add"><input id="addInput" type="text" placeholder="New quest…  press Enter" /><button id="addBtn" title="Add quest">+</button></div>
+      <div>
+        <div class="sec-title">Quest log <span class="count" id="lcount">0 done</span></div>
+        <div class="scroll log" id="logList"></div>
+      </div>
+      <div>
+        <div class="sec-title">Stats</div>
+        <div class="stats">
+          <div class="stat"><div class="v" id="s-done">0</div><div class="k">Quests</div></div>
+          <div class="stat"><div class="v" id="s-time">0m</div><div class="k">Time</div></div>
+          <div class="stat"><div class="v" id="s-streak">0</div><div class="k">Streak</div></div>
+        </div>
+      </div>
+      <div>
+        <div class="sec-title">Achievements</div>
+        <div class="ach" id="achList"></div>
+      </div>
+    </div>
+  </div>
+  <div class="toast" id="toast">LEVEL UP</div>
+
+<script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+<script src="quest-core.js"></script>
+<script>
+(function(){
+  "use strict";
+  var $ = function(id){ return document.getElementById(id); };
+  var state = QC.defaultState(), store = null, lastSelfSave = 0;
+
+  function save(){ lastSelfSave = Date.now(); if(store) store.save(JSON.stringify(state)); }
+  function reload(cb){
+    if(!store){ cb && cb(); return; }
+    store.load(function(str){
+      try{ state = QC.normalize(str ? JSON.parse(str) : null); }catch(e){ state = QC.defaultState(); }
+      cb && cb();
+    });
+  }
+
+  function applyUi(){
+    var t = state.ui && state.ui.translucent !== false;
+    $("panel").classList.toggle("solid", !t);
+    $("solidToggle").classList.toggle("on", !t);
+    var op = (state.ui && state.ui.opacity) ? state.ui.opacity : 1.0;
+    $("opacity").value = Math.round(op*100); $("opval").textContent = Math.round(op*100)+"%";
+    if(store) store.setOpacity(op);
+  }
+
+  function toast(m){ var t=$("toast"); t.textContent=m; t.classList.add("show"); setTimeout(function(){t.classList.remove("show");},1700); }
+
+  function render(){
+    $("lvl").textContent = state.level;
+    $("gold").textContent = state.gold.toLocaleString();
+    $("xpval").textContent = state.xp + " / " + state.xpMax;
+    $("xpfill").style.width = Math.min(100, Math.round(state.xp/state.xpMax*100)) + "%";
+
+    var ql=$("questList"); ql.innerHTML=""; $("qcount").textContent=state.quests.length;
+    state.quests.forEach(function(q){
+      var r=QC.reward(q), el=document.createElement("div");
+      el.className="quest"+(q.started?" active":""); el.style.setProperty("--diff", r.color);
+      var timer=q.started?'<span class="timer" data-start="'+q.started+'">0s</span>':'';
+      var rep=q.fromRecurring?'<span class="q-rep">repeat</span>':'';
+      el.innerHTML=
+        '<div class="q-top"><div class="q-title">'+QC.esc(q.title)+'</div>'+rep+timer+
+          '<span class="q-x" data-del="'+q.id+'" title="Remove">✕</span></div>'+
+        (q.obj?'<div class="q-obj">'+QC.esc(q.obj)+'</div>':'')+
+        '<div class="q-meta"><span class="reward">+'+r.gold+' gold · <span class="xp-tag">+'+r.xp+' xp</span></span>'+
+          '<span style="text-transform:capitalize;color:'+r.color+'">'+q.diff+'</span></div>'+
+        '<div class="q-actions">'+
+          (q.started?'<button class="qbtn done" data-done="'+q.id+'">✓ Done</button>'
+                    :'<button class="qbtn start" data-go="'+q.id+'">▸ Start</button>')+
+        '</div>';
+      ql.appendChild(el);
+    });
+
+    var ll=$("logList"); ll.innerHTML=""; $("lcount").textContent=state.completed.length+" done";
+    if(state.completed.length===0) ll.innerHTML='<div style="color:var(--text-dim);font-size:11px;padding:5px 1px;">No quests completed yet.</div>';
+    state.completed.slice(0,40).forEach(function(c){
+      var el=document.createElement("div"); el.className="logitem";
+      el.innerHTML='<span class="chk">✓</span><span class="lt">'+QC.esc(c.title)+'</span><span class="ld">'+QC.fmtDur(c.ms)+'</span><span class="lw">'+QC.fmtWhen(c.at)+'</span>';
+      ll.appendChild(el);
+    });
+
+    $("s-done").textContent=state.completed.length;
+    $("s-time").textContent=state.totalMs?QC.fmtDur(state.totalMs):"0m";
+    $("s-streak").textContent=QC.streak(state);
+
+    var al=$("achList"); al.innerHTML="";
+    QC.ACHS.forEach(function(a){
+      var on=state.ach[a.key], el=document.createElement("div");
+      el.className="badge"+(on?" on":"");
+      el.innerHTML=(on?a.icon:"<span style='opacity:.45'>•</span>")+'<span class="tip">'+QC.esc(a.name)+(on?"":" (locked)")+'</span>';
+      al.appendChild(el);
+    });
+  }
+
+  setInterval(function(){
+    document.querySelectorAll(".timer[data-start]").forEach(function(el){
+      el.textContent=QC.fmtDur(Date.now()-parseInt(el.getAttribute("data-start"),10));
+    });
+  },1000);
+  /* recurring rollover check (also covers passing midnight while running) */
+  setInterval(function(){ if(QC.rollover(state)){ save(); render(); } }, 60000);
+
+  /* events */
+  $("questList").addEventListener("click",function(e){
+    var go=e.target.closest("[data-go]"), dn=e.target.closest("[data-done]"), dl=e.target.closest("[data-del]");
+    if(go){ QC.startQuest(state, +go.getAttribute("data-go")); save(); render(); }
+    else if(dn){ var ups=QC.completeQuest(state, +dn.getAttribute("data-done")); ups.forEach(function(L){ toast("LEVEL "+L); }); save(); render(); }
+    else if(dl){ QC.removeQuest(state, +dl.getAttribute("data-del")); save(); render(); }
+  });
+  function doAdd(){ var v=$("addInput").value.trim(); if(!v) return; QC.addQuest(state,{title:v,obj:""}); $("addInput").value=""; save(); render(); }
+  $("addBtn").addEventListener("click", doAdd);
+  $("addInput").addEventListener("keydown",function(e){ if(e.key==="Enter") doAdd(); });
+  $("collapseBtn").addEventListener("click",function(){ var p=$("panel"); p.classList.toggle("collapsed"); this.textContent=p.classList.contains("collapsed")?"▸":"▾"; });
+  $("gearBtn").addEventListener("click",function(){ $("settings").classList.toggle("open"); });
+  $("openPanelBtn").addEventListener("click",function(){ if(store) store.openPanel(); });
+  $("solidToggle").addEventListener("click",function(){
+    var cur = state.ui.translucent !== false;  /* default translucent */
+    state.ui.translucent = !cur;
+    applyUi(); save();
+  });
+  $("opacity").addEventListener("input",function(){
+    var op=this.value/100; $("opval").textContent=this.value+"%"; state.ui.opacity=op;
+    if(store) store.setOpacity(op);
+  });
+  $("opacity").addEventListener("change", save);
+
+  /* boot */
+  QC.makeStore(function(s){
+    store = s;
+    reload(function(){
+      if(QC.rollover(state)) save();
+      applyUi(); render();
+      store.onChange(function(){ if(Date.now()-lastSelfSave < 600) return; reload(function(){ applyUi(); render(); }); });
+    });
+  });
+})();
+</script>
+</body>
+</html>

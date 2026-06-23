@@ -1,0 +1,21 @@
+# Runtime data (your quests live here — keep it local)
+data/
+*.json.tmp
+
+# Python virtual environment
+.venv/
+venv/
+env/
+
+# Python caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+*.lnk
+.vscode/
+.idea/
