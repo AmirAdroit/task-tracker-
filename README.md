@@ -12,12 +12,17 @@ No accounts, no cloud, no telemetry. Everything lives in a single local file.
 ## Features
 
 - **Always-on-top overlay** — a compact, translucent HUD that stays visible over your apps (drag it anywhere, park it in a corner).
+- **Resizable & scalable** — drag the bottom-right corner to resize, or set a *HUD size* (zoom) from settings so it fits how you work.
 - **Adjustable transparency** — toggle translucent/solid and set opacity right from the overlay.
 - **Quests with rewards** — easy / normal / hard / epic difficulties, each granting gold and XP. Start a quest to run a timer, then complete it.
+- **Categories** — group quests into your own colour-coded categories (Work, Personal, Study…).
+- **Urgency & deadlines** — give a quest an *ultimatum* (a calendar date or a quick +1/+3/+7 days), or pin it as an emergency. The card colour and sort order escalate automatically as the deadline nears or passes.
+- **Backlog & lanes** — park ideas in a Backlog and promote them when you're ready. The control panel's **Board** shows kanban-style lanes you can drag cards between.
+- **Paged overlay (lenses)** — the HUD shows one slim list at a time — Focus, Today, Backlog, or Done — so it stays minimal instead of dumping everything on screen.
 - **XP, levels, gold, achievements** — light progression that builds as you work.
 - **Timed history** — every completed quest is logged with how long it took and when it finished.
-- **Recurring quests** — daily, weekday, or weekly quests that respawn automatically.
-- **Control panel** — a full dashboard window: edit/reorder quests, manage recurring templates, search & filter history, and view productivity charts.
+- **Recurring quests** — daily, weekday, or weekly quests that respawn automatically (with optional category and deadline).
+- **Control panel** — a full dashboard window: a Board grouped by status / category / deadline, edit/reorder quests, manage categories, manage recurring templates, search & filter history, and view productivity charts.
 - **Backup & restore** — export everything to JSON; import to replace or merge.
 - **Live sync** — the overlay and the control panel share one data file, so changes appear in both instantly.
 
@@ -55,9 +60,11 @@ To undo: press `Win + R`, type `shell:startup`, and delete the *Quest HUD* short
 
 **Overlay**
 
-- Drag it by the thin top strip. `–` hides it to the system tray; `✕` quits.
-- The **⚙** button opens settings: *Solid background* toggle, *opacity* slider, and *Open control panel*.
-- Add a quest in the input box, press **Start** to run its timer, then **Done** to log it.
+- Drag it by the thin top strip. `–` hides it to the system tray; `✕` quits. Drag the **bottom-right corner** to resize.
+- The **⚙** button opens settings: *Solid background* toggle, *opacity* slider, *HUD size* (zoom) slider, and *Open control panel*.
+- Use the **‹ ›** pager to flip between lenses — **Focus** (active), **Today** (due today/overdue), **Backlog**, and **Done** — and the funnel icon to filter by category.
+- Add a quest in the input box (it lands in whatever lens you're viewing), press **Start** to run its timer, then **Done** to log it.
+- Click **⋯** on a quest to set its category, deadline (+1/+3/+7 days or a date), emergency pin, or send it to the backlog.
 
 **System tray** (bottom-right of Windows)
 
@@ -66,14 +73,15 @@ To undo: press `Win + R`, type `shell:startup`, and delete the *Quest HUD* short
 - *Click-through* — lets the mouse pass straight through the overlay (pure glance mode)
 - *Quit*
 
-**Control panel** — five tabs:
+**Control panel** — six tabs:
 
 | Tab | What it does |
 |-----|--------------|
-| Quests | Edit title, objective, difficulty and gold/XP rewards; reorder; start/complete/delete. |
-| Recurring | Create daily / weekday / weekly quests that spawn automatically. |
+| Quests | Edit title, objective, difficulty, gold/XP, **category, deadline, urgency pin, and status**; reorder; start/complete/delete. |
+| Board | Kanban-style lanes with **Group by: Status / Category / Deadline** and drag-drop between columns. Manage your categories here too. |
+| Recurring | Create daily / weekday / weekly quests that spawn automatically (with optional category and deadline). |
 | History | Full completion log with search, date filter, and sorting. |
-| Stats | Quests done, total time, current streak, and 14-day charts. |
+| Stats | Quests done, total time, current streak, overdue count, and 14-day charts. |
 | Backup | Export everything to JSON, or import (replace / merge). |
 
 ## How it works

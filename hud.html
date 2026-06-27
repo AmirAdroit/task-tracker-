@@ -36,6 +36,7 @@
   .ibtn{width:24px;height:24px;border-radius:7px;border:1px solid var(--border-soft);background:var(--bg-slab);
     color:var(--text-dim);cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;transition:.15s;}
   .ibtn:hover{background:var(--bg-slab-hi);color:var(--text);}
+  .ibtn.on{color:var(--accent);border-color:var(--accent);}
 
   .settings{display:none;flex-direction:column;gap:9px;background:var(--bg-slab);border:1px solid var(--border-soft);
     border-radius:9px;padding:10px;}
@@ -62,35 +63,73 @@
   .gold-line{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);}
   .gold-line .g{font-weight:600;color:var(--text);font-variant-numeric:tabular-nums;font-size:13px;}
 
+  /* pager */
+  .pager{display:flex;align-items:center;gap:6px;background:var(--bg-slab);border:1px solid var(--border-soft);
+    border-radius:9px;padding:5px 7px;}
+  .pager .arrow{width:22px;height:22px;flex:none;border:none;background:transparent;color:var(--text-dim);
+    cursor:pointer;font-size:15px;border-radius:6px;display:flex;align-items:center;justify-content:center;}
+  .pager .arrow:hover{background:var(--bg-slab-hi);color:var(--text);}
+  .pager .lens{flex:1;text-align:center;}
+  .pager .lens .nm{font-size:11px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;}
+  .pager .lens .ct{font-size:10px;color:var(--text-dim);margin-left:5px;}
+  .pager .funnel{width:22px;height:22px;flex:none;border:none;background:transparent;color:var(--text-dim);
+    cursor:pointer;font-size:12px;border-radius:6px;}
+  .pager .funnel:hover,.pager .funnel.on{color:var(--accent);}
+  .dots{display:flex;gap:4px;justify-content:center;margin-top:-4px;}
+  .dots span{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,0.22);}
+  .dots span.on{background:var(--accent);}
+
+  .catfilter{display:none;flex-wrap:wrap;gap:5px;margin-top:-3px;}
+  .catfilter.open{display:flex;}
+  .catchip{display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--text-dim);cursor:pointer;
+    border:1px solid var(--border-soft);background:var(--bg-slab);border-radius:20px;padding:2px 8px;}
+  .catchip .cd{width:7px;height:7px;border-radius:50%;}
+  .catchip.on{color:var(--text);border-color:var(--accent);background:var(--bg-slab-hi);}
+
   .sec-title{font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--text-dim);
     display:flex;align-items:center;gap:7px;margin:1px 0;}
   .sec-title::before{content:"";flex:none;width:11px;height:1px;background:var(--accent);opacity:.5;}
-  .sec-title .count{margin-left:auto;letter-spacing:0;font-size:10px;}
 
   .scroll{overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding-right:2px;}
   .scroll::-webkit-scrollbar{width:5px;}
   .scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:5px;}
   .quests{flex:1;min-height:60px;}
-  .log{max-height:108px;}
 
-  .quest{background:var(--bg-slab);border:1px solid var(--border-soft);border-left:2px solid var(--diff,#888);
+  .quest{background:var(--bg-slab);border:1px solid var(--border-soft);border-left:3px solid var(--u,#888);
     border-radius:8px;padding:7px 9px;display:flex;flex-direction:column;gap:4px;}
-  .quest.active{background:var(--bg-slab-hi);border-color:var(--border);}
-  .q-top{display:flex;align-items:flex-start;gap:7px;}
-  .q-title{font-size:12.5px;font-weight:500;line-height:1.25;flex:1;}
-  .q-rep{flex:none;font-size:9px;color:var(--accent);border:1px solid var(--border-soft);border-radius:5px;padding:0 4px;}
-  .q-x{flex:none;color:var(--text-dim);cursor:pointer;font-size:12px;line-height:1;padding:1px 2px;border-radius:5px;}
-  .q-x:hover{color:#e88;background:var(--bg-slab-hi);}
+  .quest.active{background:var(--bg-slab-hi);border-color:var(--border);border-left-color:var(--u,#888);}
+  .q-top{display:flex;align-items:center;gap:7px;}
+  .q-title{font-size:12.5px;font-weight:500;line-height:1.25;flex:1;min-width:0;}
+  .due-chip{flex:none;font-size:9.5px;font-weight:600;padding:1px 6px;border-radius:6px;white-space:nowrap;}
   .q-obj{font-size:11px;color:var(--text-dim);line-height:1.3;}
-  .q-meta{display:flex;align-items:center;gap:9px;font-size:10.5px;color:var(--text-dim);}
-  .reward .xp-tag{color:var(--xp-2);}
-  .timer{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--accent);font-weight:600;}
-  .q-actions{display:flex;gap:5px;}
+  .q-meta{display:flex;align-items:center;gap:8px;font-size:10.5px;color:var(--text-dim);flex-wrap:wrap;}
+  .q-meta .xp-tag{color:var(--xp-2);}
+  .cat-dot{width:7px;height:7px;border-radius:50%;flex:none;}
+  .q-meta .cat{display:flex;align-items:center;gap:4px;}
+  .q-spacer{flex:1;}
+  .timer{font-variant-numeric:tabular-nums;color:var(--accent);font-weight:600;}
   .qbtn{font-size:11px;font-weight:500;cursor:pointer;border-radius:7px;padding:3px 9px;
     border:1px solid var(--border-soft);background:var(--bg-slab-hi);color:var(--text);transition:.15s;}
   .qbtn:hover{filter:brightness(1.18);}
   .qbtn.start{border-color:var(--accent);color:var(--accent);}
   .qbtn.done{border-color:rgba(127,208,138,0.5);color:var(--good);}
+  .qbtn.act{border-color:var(--accent);color:var(--accent);}
+  .more{flex:none;width:22px;height:22px;border:1px solid var(--border-soft);background:transparent;color:var(--text-dim);
+    cursor:pointer;border-radius:7px;font-size:13px;line-height:1;}
+  .more:hover,.more.on{color:var(--text);background:var(--bg-slab-hi);}
+
+  .q-edit{display:none;flex-direction:column;gap:7px;margin-top:5px;padding-top:7px;border-top:1px solid var(--border-soft);}
+  .q-edit.open{display:flex;}
+  .erow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:10.5px;color:var(--text-dim);}
+  .erow label{font-size:10px;text-transform:uppercase;letter-spacing:.4px;}
+  .q-edit select,.q-edit input[type=date]{background:var(--bg-slab);border:1px solid var(--border-soft);border-radius:6px;
+    color:var(--text);padding:3px 5px;font-size:11px;font-family:inherit;outline:none;}
+  .q-edit select:focus,.q-edit input:focus{border-color:var(--accent);}
+  .chipbtn{font-size:10.5px;cursor:pointer;border-radius:6px;padding:2px 7px;border:1px solid var(--border-soft);
+    background:var(--bg-slab);color:var(--text-dim);font-family:inherit;}
+  .chipbtn:hover{color:var(--text);background:var(--bg-slab-hi);}
+  .chipbtn.danger{border-color:rgba(226,75,74,0.45);color:#e88;}
+  .chipbtn.pin.on{border-color:#e24b4a;color:#e24b4a;}
 
   .logitem{display:flex;align-items:center;gap:8px;font-size:11.5px;padding:4px 1px;border-bottom:1px solid var(--border-soft);}
   .logitem:last-child{border-bottom:none;}
@@ -98,16 +137,16 @@
   .logitem .lt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .logitem .ld,.logitem .lw{color:var(--text-dim);font-size:10.5px;font-variant-numeric:tabular-nums;}
 
-  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
-  .stat{background:var(--bg-slab);border:1px solid var(--border-soft);border-radius:8px;padding:6px 4px;text-align:center;}
-  .stat .v{font-weight:600;font-size:14px;font-variant-numeric:tabular-nums;}
-  .stat .k{font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.4px;margin-top:1px;}
+  .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;}
+  .stat{background:var(--bg-slab);border:1px solid var(--border-soft);border-radius:8px;padding:4px 4px;text-align:center;}
+  .stat .v{font-weight:600;font-size:12.5px;font-variant-numeric:tabular-nums;}
+  .stat .k{font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.4px;}
 
   .ach{display:flex;gap:6px;flex-wrap:wrap;}
-  .badge{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;
+  .badge{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;
     border:1px solid var(--border-soft);background:var(--bg-slab);color:var(--text-dim);position:relative;}
   .badge.on{color:var(--accent);border-color:var(--border);background:var(--bg-slab-hi);}
-  .badge .tip{position:absolute;bottom:36px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.88);color:#fff;
+  .badge .tip{position:absolute;bottom:34px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.88);color:#fff;
     font-size:10.5px;padding:4px 7px;border-radius:6px;white-space:nowrap;opacity:0;pointer-events:none;transition:.15s;z-index:5;}
   .badge:hover .tip{opacity:1;}
 
@@ -119,6 +158,7 @@
   .add button{border:1px solid var(--accent);color:var(--accent);background:transparent;border-radius:8px;width:32px;cursor:pointer;font-size:15px;}
   .add button:hover{background:var(--bg-slab-hi);}
 
+  .empty{color:var(--text-dim);font-size:11px;padding:8px 2px;text-align:center;}
   .collapsed .collapsible{display:none;}
   .toast{position:absolute;top:10px;left:50%;transform:translateX(-50%) translateY(-16px);background:rgba(20,22,30,0.95);
     border:1px solid var(--accent);color:var(--accent);font-weight:600;letter-spacing:.5px;padding:7px 16px;border-radius:10px;
@@ -143,6 +183,7 @@
     <div class="settings" id="settings">
       <div class="setrow"><span class="grow">Solid background</span><div class="toggle" id="solidToggle"></div></div>
       <div class="setrow"><span>Opacity</span><input type="range" id="opacity" min="40" max="100" value="100"><span id="opval" style="width:34px;text-align:right;">100%</span></div>
+      <div class="setrow"><span>HUD size</span><input type="range" id="scale" min="55" max="115" value="100"><span id="scaleval" style="width:34px;text-align:right;">100%</span></div>
       <button class="linkbtn" id="openPanelBtn">Open control panel ↗</button>
     </div>
 
@@ -151,22 +192,25 @@
       <div class="gold-line"><span>◉</span><span class="g" id="gold">0</span><span>gold</span></div>
     </div>
 
-    <div class="collapsible" style="display:flex;flex-direction:column;gap:11px;flex:1;min-height:0;">
-      <div style="display:flex;flex-direction:column;flex:1;min-height:0;">
-        <div class="sec-title">Active quests <span class="count" id="qcount">0</span></div>
-        <div class="scroll quests" id="questList"></div>
+    <div class="collapsible" style="display:flex;flex-direction:column;gap:9px;flex:1;min-height:0;">
+      <div class="pager">
+        <button class="arrow" id="prevLens" title="Previous">‹</button>
+        <div class="lens"><span class="nm" id="lensName">Focus</span><span class="ct" id="lensCount">0</span></div>
+        <button class="funnel" id="filterBtn" title="Filter by category">⊝</button>
+        <button class="arrow" id="nextLens" title="Next">›</button>
       </div>
+      <div class="dots" id="lensDots"></div>
+      <div class="catfilter" id="catFilter"></div>
+
+      <div class="scroll quests" id="questList"></div>
+
       <div class="add"><input id="addInput" type="text" placeholder="New quest…  press Enter" /><button id="addBtn" title="Add quest">+</button></div>
-      <div>
-        <div class="sec-title">Quest log <span class="count" id="lcount">0 done</span></div>
-        <div class="scroll log" id="logList"></div>
-      </div>
+
       <div>
         <div class="sec-title">Stats</div>
         <div class="stats">
           <div class="stat"><div class="v" id="s-done">0</div><div class="k">Quests</div></div>
           <div class="stat"><div class="v" id="s-time">0m</div><div class="k">Time</div></div>
-          <div class="stat"><div class="v" id="s-streak">0</div><div class="k">Streak</div></div>
         </div>
       </div>
       <div>
@@ -184,6 +228,13 @@
   "use strict";
   var $ = function(id){ return document.getElementById(id); };
   var state = QC.defaultState(), store = null, lastSelfSave = 0;
+  var LENSES = [
+    { key:"focus",   name:"Focus" },
+    { key:"today",   name:"Today" },
+    { key:"backlog", name:"Backlog" },
+    { key:"done",    name:"Done" }
+  ];
+  var lens = 0, filterCat = null, editId = null, filterOpen = false;
 
   function save(){ lastSelfSave = Date.now(); if(store) store.save(JSON.stringify(state)); }
   function reload(cb){
@@ -201,9 +252,86 @@
     var op = (state.ui && state.ui.opacity) ? state.ui.opacity : 1.0;
     $("opacity").value = Math.round(op*100); $("opval").textContent = Math.round(op*100)+"%";
     if(store) store.setOpacity(op);
+    var sc = (state.ui && state.ui.hudScale) ? state.ui.hudScale : 1.0;
+    $("scale").value = Math.round(sc*100); $("scaleval").textContent = Math.round(sc*100)+"%";
+    if(store) store.setZoom(sc);
   }
 
   function toast(m){ var t=$("toast"); t.textContent=m; t.classList.add("show"); setTimeout(function(){t.classList.remove("show");},1700); }
+
+  /* ---------- lens data ---------- */
+  function passCat(catId){ return filterCat == null || catId === filterCat; }
+  function lensQuests(){
+    var key = LENSES[lens].key, now = Date.now();
+    var list = state.quests.filter(function(q){
+      if(!passCat(q.cat)) return false;
+      if(key==="focus")   return q.status==="active";
+      if(key==="backlog") return q.status==="backlog";
+      if(key==="today"){ var d=QC.dueDaysLeft(q.due, now); return q.pinned || (d!=null && d<=0); }
+      return false;
+    });
+    list.sort(QC.byHeat(now));
+    return list;
+  }
+
+  /* ---------- card ---------- */
+  function catOptions(sel){
+    var html = '<option value="">No category</option>';
+    state.categories.forEach(function(c){
+      html += '<option value="'+c.id+'"'+(c.id===sel?' selected':'')+'>'+QC.esc(c.name)+'</option>';
+    });
+    return html;
+  }
+  function toDateInput(ts){
+    if(ts==null) return "";
+    var d=new Date(ts);
+    return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2);
+  }
+  function questCard(q){
+    var u = QC.urgency(q), uc = QC.URGENCY[u].color, r = QC.reward(q);
+    var cat = QC.catById(state, q.cat);
+    var dueTxt = QC.fmtDue(q.due);
+    var dueChip = dueTxt ? '<span class="due-chip" style="color:'+uc+';background:'+uc+'22;">'+dueTxt+'</span>'
+                         : (q.pinned ? '<span class="due-chip" style="color:'+uc+';background:'+uc+'22;">!</span>' : '');
+    var timer = q.started ? '<span class="timer" data-start="'+q.started+'">0s</span>' : '';
+    var action;
+    if(q.status==="backlog") action = '<button class="qbtn act" data-activate="'+q.id+'">→ Activate</button>';
+    else if(q.started)       action = '<button class="qbtn done" data-done="'+q.id+'">✓ Done</button>';
+    else                     action = '<button class="qbtn start" data-go="'+q.id+'">▸ Start</button>';
+    var catTag = cat ? '<span class="cat"><span class="cat-dot" style="background:'+cat.color+'"></span>'+QC.esc(cat.name)+'</span>' : '';
+    var open = (editId===q.id);
+
+    var edit =
+      '<div class="q-edit'+(open?' open':'')+'" data-editbox="'+q.id+'">'+
+        '<div class="erow"><label>Category</label>'+
+          '<select data-ef="cat" data-id="'+q.id+'">'+catOptions(q.cat)+'</select>'+
+          '<button class="chipbtn pin'+(q.pinned?' on':'')+'" data-pin="'+q.id+'">⚑ Emergency</button>'+
+        '</div>'+
+        '<div class="erow"><label>Due</label>'+
+          '<button class="chipbtn" data-due="1" data-id="'+q.id+'">+1d</button>'+
+          '<button class="chipbtn" data-due="3" data-id="'+q.id+'">+3d</button>'+
+          '<button class="chipbtn" data-due="7" data-id="'+q.id+'">+7d</button>'+
+          '<input type="date" data-ef="duedate" data-id="'+q.id+'" value="'+toDateInput(q.due)+'">'+
+          (q.due!=null?'<button class="chipbtn" data-due="clear" data-id="'+q.id+'">clear</button>':'')+
+        '</div>'+
+        '<div class="erow">'+
+          (q.status==="backlog"
+            ? '<button class="chipbtn" data-mv="active" data-id="'+q.id+'">↑ Make active</button>'
+            : '<button class="chipbtn" data-mv="backlog" data-id="'+q.id+'">↓ To backlog</button>')+
+          '<span class="q-spacer"></span>'+
+          '<button class="chipbtn danger" data-del="'+q.id+'">✕ Delete</button>'+
+        '</div>'+
+      '</div>';
+
+    return '<div class="quest'+(q.started?' active':'')+'" style="--u:'+uc+'">'+
+        '<div class="q-top"><span class="q-title">'+QC.esc(q.title)+'</span>'+dueChip+'</div>'+
+        (q.obj?'<div class="q-obj">'+QC.esc(q.obj)+'</div>':'')+
+        '<div class="q-meta"><span class="reward">+'+r.gold+'g · <span class="xp-tag">+'+r.xp+'xp</span></span>'+
+          catTag+'<span class="q-spacer"></span>'+timer+action+
+          '<button class="more'+(open?' on':'')+'" data-more="'+q.id+'" title="Edit">⋯</button></div>'+
+        edit+
+      '</div>';
+  }
 
   function render(){
     $("lvl").textContent = state.level;
@@ -211,36 +339,44 @@
     $("xpval").textContent = state.xp + " / " + state.xpMax;
     $("xpfill").style.width = Math.min(100, Math.round(state.xp/state.xpMax*100)) + "%";
 
-    var ql=$("questList"); ql.innerHTML=""; $("qcount").textContent=state.quests.length;
-    state.quests.forEach(function(q){
-      var r=QC.reward(q), el=document.createElement("div");
-      el.className="quest"+(q.started?" active":""); el.style.setProperty("--diff", r.color);
-      var timer=q.started?'<span class="timer" data-start="'+q.started+'">0s</span>':'';
-      var rep=q.fromRecurring?'<span class="q-rep">repeat</span>':'';
-      el.innerHTML=
-        '<div class="q-top"><div class="q-title">'+QC.esc(q.title)+'</div>'+rep+timer+
-          '<span class="q-x" data-del="'+q.id+'" title="Remove">✕</span></div>'+
-        (q.obj?'<div class="q-obj">'+QC.esc(q.obj)+'</div>':'')+
-        '<div class="q-meta"><span class="reward">+'+r.gold+' gold · <span class="xp-tag">+'+r.xp+' xp</span></span>'+
-          '<span style="text-transform:capitalize;color:'+r.color+'">'+q.diff+'</span></div>'+
-        '<div class="q-actions">'+
-          (q.started?'<button class="qbtn done" data-done="'+q.id+'">✓ Done</button>'
-                    :'<button class="qbtn start" data-go="'+q.id+'">▸ Start</button>')+
-        '</div>';
-      ql.appendChild(el);
-    });
+    if(filterCat != null && !QC.catById(state, filterCat)) filterCat = null;
 
-    var ll=$("logList"); ll.innerHTML=""; $("lcount").textContent=state.completed.length+" done";
-    if(state.completed.length===0) ll.innerHTML='<div style="color:var(--text-dim);font-size:11px;padding:5px 1px;">No quests completed yet.</div>';
-    state.completed.slice(0,40).forEach(function(c){
-      var el=document.createElement("div"); el.className="logitem";
-      el.innerHTML='<span class="chk">✓</span><span class="lt">'+QC.esc(c.title)+'</span><span class="ld">'+QC.fmtDur(c.ms)+'</span><span class="lw">'+QC.fmtWhen(c.at)+'</span>';
-      ll.appendChild(el);
-    });
+    $("lensName").textContent = LENSES[lens].name;
+    var dots = ""; LENSES.forEach(function(_,i){ dots += '<span class="'+(i===lens?"on":"")+'"></span>'; });
+    $("lensDots").innerHTML = dots;
+    $("filterBtn").classList.toggle("on", filterCat!=null);
 
-    $("s-done").textContent=state.completed.length;
-    $("s-time").textContent=state.totalMs?QC.fmtDur(state.totalMs):"0m";
-    $("s-streak").textContent=QC.streak(state);
+    var cf = $("catFilter"); cf.classList.toggle("open", filterOpen);
+    if(filterOpen){
+      var chips = '<span class="catchip'+(filterCat==null?' on':'')+'" data-cat="">All</span>';
+      state.categories.forEach(function(c){
+        chips += '<span class="catchip'+(filterCat===c.id?' on':'')+'" data-cat="'+c.id+'">'+
+                 '<span class="cd" style="background:'+c.color+'"></span>'+QC.esc(c.name)+'</span>';
+      });
+      cf.innerHTML = chips;
+    }
+
+    var ql = $("questList"); ql.innerHTML = "";
+    if(LENSES[lens].key==="done"){
+      var done = state.completed.filter(function(c){ return passCat(c.cat); });
+      $("lensCount").textContent = done.length;
+      if(done.length===0){ ql.innerHTML = '<div class="empty">No quests completed yet.</div>'; }
+      done.slice(0,40).forEach(function(c){
+        var el=document.createElement("div"); el.className="logitem";
+        el.innerHTML='<span class="chk">✓</span><span class="lt">'+QC.esc(c.title)+'</span><span class="ld">'+QC.fmtDur(c.ms)+'</span><span class="lw">'+QC.fmtWhen(c.at)+'</span>';
+        ql.appendChild(el);
+      });
+    } else {
+      var list = lensQuests();
+      $("lensCount").textContent = list.length;
+      if(list.length===0){
+        ql.innerHTML = '<div class="empty">'+(LENSES[lens].key==="today"?"Nothing due today. Nice.":(LENSES[lens].key==="backlog"?"Backlog is empty.":"No active quests."))+'</div>';
+      }
+      list.forEach(function(q){ ql.insertAdjacentHTML("beforeend", questCard(q)); });
+    }
+
+    $("s-done").textContent = state.completed.length;
+    $("s-time").textContent = state.totalMs ? QC.fmtDur(state.totalMs) : "0m";
 
     var al=$("achList"); al.innerHTML="";
     QC.ACHS.forEach(function(a){
@@ -256,24 +392,60 @@
       el.textContent=QC.fmtDur(Date.now()-parseInt(el.getAttribute("data-start"),10));
     });
   },1000);
-  /* recurring rollover check (also covers passing midnight while running) */
-  setInterval(function(){ if(QC.rollover(state)){ save(); render(); } }, 60000);
+  /* recurring rollover + due-date colour refresh (also covers passing midnight).
+     skip the re-render while an inline editor is open so we don't yank focus. */
+  setInterval(function(){ var ch=QC.rollover(state); if(ch) save(); if(ch || editId===null) render(); }, 60000);
 
-  /* events */
-  $("questList").addEventListener("click",function(e){
-    var go=e.target.closest("[data-go]"), dn=e.target.closest("[data-done]"), dl=e.target.closest("[data-del]");
-    if(go){ QC.startQuest(state, +go.getAttribute("data-go")); save(); render(); }
-    else if(dn){ var ups=QC.completeQuest(state, +dn.getAttribute("data-done")); ups.forEach(function(L){ toast("LEVEL "+L); }); save(); render(); }
-    else if(dl){ QC.removeQuest(state, +dl.getAttribute("data-del")); save(); render(); }
+  /* ---------- events ---------- */
+  $("prevLens").addEventListener("click",function(){ lens=(lens-1+LENSES.length)%LENSES.length; editId=null; render(); });
+  $("nextLens").addEventListener("click",function(){ lens=(lens+1)%LENSES.length; editId=null; render(); });
+  $("filterBtn").addEventListener("click",function(){ filterOpen=!filterOpen; render(); });
+  $("catFilter").addEventListener("click",function(e){
+    var c=e.target.closest("[data-cat]"); if(!c) return;
+    var v=c.getAttribute("data-cat"); filterCat = v==="" ? null : +v; render();
   });
-  function doAdd(){ var v=$("addInput").value.trim(); if(!v) return; QC.addQuest(state,{title:v,obj:""}); $("addInput").value=""; save(); render(); }
+
+  $("questList").addEventListener("click",function(e){
+    var el;
+    if((el=e.target.closest("[data-go]")))        { QC.startQuest(state,+el.getAttribute("data-go")); save(); render(); }
+    else if((el=e.target.closest("[data-done]")))  { var ups=QC.completeQuest(state,+el.getAttribute("data-done")); ups.forEach(function(L){ toast("LEVEL "+L); }); editId=null; save(); render(); }
+    else if((el=e.target.closest("[data-activate]"))){ QC.setStatus(state,+el.getAttribute("data-activate"),"active"); save(); render(); }
+    else if((el=e.target.closest("[data-more]")))  { var id=+el.getAttribute("data-more"); editId = (editId===id?null:id); render(); }
+    else if((el=e.target.closest("[data-pin]")))   { var i=+el.getAttribute("data-pin"); var q=state.quests.find(function(x){return x.id===i;}); if(q){ QC.editQuest(state,i,{pinned:!q.pinned}); save(); render(); } }
+    else if((el=e.target.closest("[data-mv]")))    { QC.setStatus(state,+el.getAttribute("data-id"),el.getAttribute("data-mv")); save(); render(); }
+    else if((el=e.target.closest("[data-del]")))   { QC.removeQuest(state,+el.getAttribute("data-del")); editId=null; save(); render(); }
+    else if((el=e.target.closest("[data-due]")))   {
+      var id2=+el.getAttribute("data-id"), v=el.getAttribute("data-due");
+      var due = v==="clear" ? null : (QC.startOfDay(Date.now()) + (+v)*86400000);
+      QC.editQuest(state,id2,{due:due}); save(); render();
+    }
+  });
+  $("questList").addEventListener("change",function(e){
+    var el=e.target, ef=el.getAttribute("data-ef"); if(!ef) return;
+    var id=+el.getAttribute("data-id");
+    if(ef==="cat"){ QC.editQuest(state,id,{cat: el.value==="" ? null : +el.value}); save(); render(); }
+    else if(ef==="duedate"){
+      var due=null;
+      if(el.value){ var p=el.value.split("-"); due=new Date(+p[0],+p[1]-1,+p[2]).getTime(); }
+      QC.editQuest(state,id,{due:due}); save(); render();
+    }
+  });
+
+  function doAdd(){
+    var v=$("addInput").value.trim(); if(!v) return;
+    var key=LENSES[lens].key, fields={ title:v, obj:"" };
+    if(key==="backlog") fields.status="backlog";
+    if(key==="today") fields.due = QC.startOfDay(Date.now());
+    if(filterCat!=null) fields.cat = filterCat;
+    QC.addQuest(state, fields); $("addInput").value=""; save(); render();
+  }
   $("addBtn").addEventListener("click", doAdd);
   $("addInput").addEventListener("keydown",function(e){ if(e.key==="Enter") doAdd(); });
   $("collapseBtn").addEventListener("click",function(){ var p=$("panel"); p.classList.toggle("collapsed"); this.textContent=p.classList.contains("collapsed")?"▸":"▾"; });
   $("gearBtn").addEventListener("click",function(){ $("settings").classList.toggle("open"); });
   $("openPanelBtn").addEventListener("click",function(){ if(store) store.openPanel(); });
   $("solidToggle").addEventListener("click",function(){
-    var cur = state.ui.translucent !== false;  /* default translucent */
+    var cur = state.ui.translucent !== false;
     state.ui.translucent = !cur;
     applyUi(); save();
   });
@@ -282,6 +454,11 @@
     if(store) store.setOpacity(op);
   });
   $("opacity").addEventListener("change", save);
+  $("scale").addEventListener("input",function(){
+    var sc=this.value/100; $("scaleval").textContent=this.value+"%"; state.ui.hudScale=sc;
+    if(store) store.setZoom(sc);
+  });
+  $("scale").addEventListener("change", save);
 
   /* boot */
   QC.makeStore(function(s){

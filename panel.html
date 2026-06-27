@@ -34,7 +34,7 @@
   .card{background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px;}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
   label{font-size:12px;color:var(--dim);}
-  input[type=text],input[type=number],select,textarea{background:var(--bg3);border:1px solid var(--line);border-radius:8px;
+  input[type=text],input[type=number],input[type=date],select,textarea{background:var(--bg3);border:1px solid var(--line);border-radius:8px;
     color:var(--text);padding:8px 10px;font-size:13px;font-family:inherit;outline:none;}
   input:focus,select:focus,textarea:focus{border-color:var(--accent);}
   input[type=number]{width:74px;}
@@ -55,8 +55,11 @@
   .qmain .line1{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
   .qmain .line1 input[type=text]{flex:1;min-width:160px;}
   .qmain .line2{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--dim);}
+  .qmain .line2 .chk{display:flex;align-items:center;gap:5px;}
   .acts{display:flex;gap:6px;align-items:center;flex:none;}
   .pill{font-size:11px;border:1px solid var(--line);border-radius:20px;padding:2px 8px;color:var(--accent2);}
+  .uflag{display:inline-block;width:9px;height:9px;border-radius:50%;flex:none;}
+  .due-chip{font-size:11px;font-weight:600;padding:1px 8px;border-radius:6px;}
 
   table{width:100%;border-collapse:collapse;font-size:13px;}
   th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);}
@@ -70,6 +73,30 @@
   canvas{width:100%;display:block;}
   .muted{color:var(--dim);font-size:12.5px;}
   .spacer{flex:1;}
+
+  /* board */
+  .board{display:flex;gap:12px;overflow-x:auto;padding-bottom:10px;align-items:flex-start;}
+  .bcol{flex:0 0 248px;background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:10px;min-height:120px;}
+  .bcol.over{border-color:var(--accent);background:var(--bg3);}
+  .bcol .ch{display:flex;justify-content:space-between;align-items:center;font-size:12px;text-transform:uppercase;
+    letter-spacing:.5px;color:var(--dim);margin-bottom:10px;}
+  .bcol .ch .n{color:var(--text);font-weight:600;}
+  .bcard{background:var(--bg3);border:1px solid var(--line);border-left:3px solid var(--u,#888);border-radius:8px;
+    padding:9px 10px;margin-bottom:8px;cursor:grab;}
+  .bcard:last-child{margin-bottom:0;}
+  .bcard.dragging{opacity:.45;}
+  .bcard.done{cursor:default;border-left-color:var(--good);}
+  .bc-title{font-size:13px;font-weight:500;margin-bottom:6px;line-height:1.3;}
+  .bc-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11.5px;color:var(--dim);}
+  .bc-meta .cd{width:8px;height:8px;border-radius:50%;}
+  .bc-meta .cat{display:flex;align-items:center;gap:4px;}
+  .colempty{font-size:12px;color:var(--dim);padding:6px 2px;}
+
+  .catrow{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+  .catrow:last-child{margin-bottom:0;}
+  .catrow input[type=color]{width:36px;height:32px;padding:0;border:1px solid var(--line);border-radius:6px;background:var(--bg3);cursor:pointer;}
+  .catrow input[type=text]{flex:1;min-width:120px;max-width:220px;}
+
   .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--accent);
     color:var(--accent2);padding:9px 16px;border-radius:10px;opacity:0;transition:.25s;pointer-events:none;}
   .toast.show{opacity:1;}
@@ -80,6 +107,7 @@
   <nav class="side">
     <div class="brand"><div class="dot">Q</div><b>Quest HUD</b></div>
     <button class="navb active" data-tab="quests">⚔ Quests</button>
+    <button class="navb" data-tab="board">▦ Board</button>
     <button class="navb" data-tab="recurring">↻ Recurring</button>
     <button class="navb" data-tab="history">✓ History</button>
     <button class="navb" data-tab="stats">▲ Stats</button>
@@ -95,32 +123,58 @@
     <!-- QUESTS -->
     <section class="sec active" id="tab-quests">
       <h1>Active quests</h1>
-      <p class="sub">Edit details, reorder, start the timer, or complete. Changes sync to the overlay instantly.</p>
+      <p class="sub">Edit details, set category / deadline / urgency, start the timer, or complete. Changes sync to the overlay instantly.</p>
       <div class="card">
         <div class="row">
           <input type="text" id="nq-title" placeholder="New quest title" style="flex:1;min-width:200px;">
           <input type="text" id="nq-obj" placeholder="Objective (optional)" style="flex:1;min-width:160px;">
           <select id="nq-diff"></select>
+          <select id="nq-cat"></select>
+          <input type="date" id="nq-due" title="Deadline (optional)">
+          <select id="nq-status"><option value="active">Active</option><option value="backlog">Backlog</option></select>
           <button class="btn" id="nq-add">Add quest</button>
         </div>
       </div>
       <div class="card" id="quests-list"></div>
     </section>
 
+    <!-- BOARD -->
+    <section class="sec" id="tab-board">
+      <h1>Board</h1>
+      <p class="sub">Drag cards between lanes. Group by status to move stuff through stages, by category to see what's left where, or by deadline to see the week's plate.</p>
+      <div class="card">
+        <div class="row">
+          <label>Manage categories</label><span class="spacer"></span>
+          <button class="btn ghost sm" id="cat-add">+ Add category</button>
+        </div>
+        <div id="cat-manage" style="margin-top:12px;"></div>
+      </div>
+      <div class="card">
+        <div class="row">
+          <label>Group by</label>
+          <select id="board-group"><option value="status">Status</option><option value="cat">Category</option><option value="due">Deadline</option></select>
+          <span class="muted" id="board-hint">Drag to change status.</span>
+        </div>
+      </div>
+      <div class="board" id="board"></div>
+    </section>
+
     <!-- RECURRING -->
     <section class="sec" id="tab-recurring">
       <h1>Recurring quests</h1>
-      <p class="sub">Templates that spawn automatically — daily, weekdays, or weekly.</p>
+      <p class="sub">Templates that spawn automatically — daily, weekdays, or weekly. Optionally tag a category and a deadline offset.</p>
       <div class="card">
         <div class="row">
           <input type="text" id="nr-title" placeholder="Recurring quest title" style="flex:1;min-width:180px;">
           <input type="text" id="nr-obj" placeholder="Objective (optional)" style="flex:1;min-width:140px;">
           <select id="nr-diff"></select>
+          <select id="nr-cat"></select>
           <select id="nr-repeat"><option value="daily">Daily</option><option value="weekdays">Weekdays</option><option value="weekly">Weekly</option></select>
           <select id="nr-weekday" style="display:none;">
             <option value="1">Mon</option><option value="2">Tue</option><option value="3">Wed</option>
             <option value="4">Thu</option><option value="5">Fri</option><option value="6">Sat</option><option value="0">Sun</option>
           </select>
+          <input type="number" id="nr-dueoff" placeholder="Due +d" title="Deadline: N days after it spawns (optional)" min="0">
           <button class="btn" id="nr-add">Add</button>
         </div>
       </div>
@@ -158,7 +212,7 @@
       <p class="sub">Export everything to a JSON file, or load a backup back in.</p>
       <div class="card">
         <div class="row"><button class="btn" id="bk-export">⤓ Export backup (.json)</button></div>
-        <p class="muted" style="margin:10px 0 0;">Saves quests, recurring templates, full history, level, gold — everything.</p>
+        <p class="muted" style="margin:10px 0 0;">Saves quests, categories, recurring templates, full history, level, gold — everything.</p>
       </div>
       <div class="card">
         <div class="row">
@@ -179,6 +233,7 @@
   "use strict";
   var $ = function(id){ return document.getElementById(id); };
   var state = QC.defaultState(), store = null, lastSelfSave = 0, tab = "quests";
+  var boardGroup = "status", draggedId = null;
 
   function save(){ lastSelfSave = Date.now(); if(store) store.save(JSON.stringify(state)); }
   function reload(cb){
@@ -195,13 +250,35 @@
       if(d===val) o.selected=true; sel.appendChild(o);
     });
   }
+  function catOptionsHtml(selId){
+    var html='<option value="">No category</option>';
+    state.categories.forEach(function(c){
+      html+='<option value="'+c.id+'"'+(c.id===selId?' selected':'')+'>'+QC.esc(c.name)+'</option>';
+    });
+    return html;
+  }
+  function refreshCatSelects(){
+    $("nq-cat").innerHTML=catOptionsHtml(null);
+    $("nr-cat").innerHTML=catOptionsHtml(null);
+  }
+  function toDateInput(ts){
+    if(ts==null) return "";
+    var d=new Date(ts);
+    return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2);
+  }
+  function fromDateInput(v){ if(!v) return null; var p=v.split("-"); return new Date(+p[0],+p[1]-1,+p[2]).getTime(); }
+  function dueChipHtml(q){
+    var txt=QC.fmtDue(q.due); if(!txt && !q.pinned) return "";
+    var c=QC.urgencyColor(q);
+    return '<span class="due-chip" style="color:'+c+';background:'+c+'22;">'+(txt||"pinned")+'</span>';
+  }
 
   /* ---------- QUESTS ---------- */
   function renderQuests(){
     var box=$("quests-list"); box.innerHTML="";
-    if(state.quests.length===0){ box.innerHTML='<p class="muted">No active quests. Add one above.</p>'; return; }
+    if(state.quests.length===0){ box.innerHTML='<p class="muted">No quests yet. Add one above.</p>'; return; }
     state.quests.forEach(function(q){
-      var dd=QC.DIFF[q.diff]||QC.DIFF.normal, row=document.createElement("div"); row.className="qrow";
+      var dd=QC.DIFF[q.diff]||QC.DIFF.normal, uc=QC.urgencyColor(q), row=document.createElement("div"); row.className="qrow";
       row.innerHTML=
         '<div class="ord">'+
           '<button class="iconbtn" data-up="'+q.id+'" title="Move up">▲</button>'+
@@ -209,7 +286,9 @@
         '</div>'+
         '<div class="qmain">'+
           '<div class="line1">'+
+            '<span class="uflag" style="background:'+uc+'" title="Urgency: '+QC.URGENCY[QC.urgency(q)].label+'"></span>'+
             '<input type="text" data-f="title" data-id="'+q.id+'" value="'+QC.esc(q.title)+'">'+
+            dueChipHtml(q)+
             (q.fromRecurring?'<span class="pill">recurring</span>':'')+
             (q.started?'<span class="pill" style="color:var(--good)">running</span>':'')+
           '</div>'+
@@ -220,6 +299,12 @@
             '<label>Difficulty</label><select data-f="diff" data-id="'+q.id+'"></select>'+
             '<label>Gold</label><input type="number" data-f="gold" data-id="'+q.id+'" placeholder="'+dd.gold+'" value="'+(typeof q.gold==="number"?q.gold:"")+'">'+
             '<label>XP</label><input type="number" data-f="xp" data-id="'+q.id+'" placeholder="'+dd.xp+'" value="'+(typeof q.xp==="number"?q.xp:"")+'">'+
+          '</div>'+
+          '<div class="line2">'+
+            '<label>Category</label><select data-f="cat" data-id="'+q.id+'">'+catOptionsHtml(q.cat)+'</select>'+
+            '<label>Due</label><input type="date" data-f="due" data-id="'+q.id+'" value="'+toDateInput(q.due)+'">'+
+            '<label>Status</label><select data-f="status" data-id="'+q.id+'"><option value="active"'+(q.status!=="backlog"?' selected':'')+'>Active</option><option value="backlog"'+(q.status==="backlog"?' selected':'')+'>Backlog</option></select>'+
+            '<span class="chk"><input type="checkbox" data-f="pin" data-id="'+q.id+'"'+(q.pinned?' checked':'')+'><label>Emergency</label></span>'+
           '</div>'+
         '</div>'+
         '<div class="acts">'+
@@ -244,18 +329,134 @@
   });
   $("quests-list").addEventListener("change",function(e){
     var el=e.target, id=+el.getAttribute("data-id"), f=el.getAttribute("data-f"); if(!f) return;
+    if(f==="status"){ QC.setStatus(state,id,el.value); save(); renderQuests(); return; }
     var patch={};
     if(f==="title") patch.title=el.value;
     else if(f==="obj") patch.obj=el.value;
     else if(f==="diff") patch.diff=el.value;
+    else if(f==="cat") patch.cat = el.value==="" ? null : +el.value;
+    else if(f==="due") patch.due = fromDateInput(el.value);
+    else if(f==="pin") patch.pinned = el.checked;
     else if(f==="gold"||f==="xp") patch[f]= el.value==="" ? null : Math.max(0, parseInt(el.value,10)||0);
     QC.editQuest(state,id,patch); save();
-    if(f==="diff") renderQuests();
+    if(f==="diff"||f==="cat"||f==="due"||f==="pin") renderQuests();
   });
   $("nq-add").addEventListener("click",function(){
     var t=$("nq-title").value.trim(); if(!t){ toast("Enter a title"); return; }
-    QC.addQuest(state,{title:t, obj:$("nq-obj").value.trim(), diff:$("nq-diff").value});
-    $("nq-title").value=""; $("nq-obj").value=""; save(); renderQuests();
+    QC.addQuest(state,{title:t, obj:$("nq-obj").value.trim(), diff:$("nq-diff").value,
+      cat: $("nq-cat").value==="" ? null : +$("nq-cat").value,
+      due: fromDateInput($("nq-due").value), status:$("nq-status").value});
+    $("nq-title").value=""; $("nq-obj").value=""; $("nq-due").value=""; save(); renderQuests();
+  });
+
+  /* ---------- CATEGORIES ---------- */
+  function renderCatManage(){
+    var box=$("cat-manage"); box.innerHTML="";
+    if(state.categories.length===0){ box.innerHTML='<p class="muted">No categories. Add one to start tagging quests.</p>'; }
+    state.categories.forEach(function(c){
+      var row=document.createElement("div"); row.className="catrow";
+      row.innerHTML='<input type="color" data-cf="color" data-id="'+c.id+'" value="'+c.color+'">'+
+        '<input type="text" data-cf="name" data-id="'+c.id+'" value="'+QC.esc(c.name)+'">'+
+        '<button class="iconbtn" data-cdel="'+c.id+'" title="Delete category">✕</button>';
+      box.appendChild(row);
+    });
+  }
+  $("cat-add").addEventListener("click",function(){ QC.addCategory(state,{name:"New category"}); save(); renderAll(); });
+  $("cat-manage").addEventListener("change",function(e){
+    var el=e.target, cf=el.getAttribute("data-cf"); if(!cf) return;
+    var id=+el.getAttribute("data-id"), patch={}; patch[cf]=el.value;
+    QC.editCategory(state,id,patch); save(); renderAll();
+  });
+  $("cat-manage").addEventListener("click",function(e){
+    var d=e.target.closest("[data-cdel]"); if(!d) return;
+    if(!confirm("Delete this category? Its quests will become uncategorised.")) return;
+    QC.removeCategory(state,+d.getAttribute("data-cdel")); save(); renderAll();
+  });
+
+  /* ---------- BOARD ---------- */
+  function boardColumns(){
+    var now=Date.now(), open=state.quests.slice();
+    if(boardGroup==="status"){
+      return [
+        { key:"backlog", title:"Backlog", drop:"backlog", items:open.filter(function(q){return q.status==="backlog";}).sort(QC.byHeat(now)) },
+        { key:"todo",    title:"To do",   drop:"active",  items:open.filter(function(q){return q.status==="active" && !q.started;}).sort(QC.byHeat(now)) },
+        { key:"doing",   title:"In progress", drop:"doing", items:open.filter(function(q){return q.status==="active" && q.started;}).sort(QC.byHeat(now)) },
+        { key:"done",    title:"Done",    drop:"done",    items:state.completed.slice(0,15), done:true }
+      ];
+    }
+    if(boardGroup==="cat"){
+      var cols=state.categories.map(function(c){
+        return { key:"c"+c.id, title:c.name, drop:String(c.id), items:open.filter(function(q){return q.cat===c.id;}).sort(QC.byHeat(now)) };
+      });
+      cols.push({ key:"none", title:"No category", drop:"none", items:open.filter(function(q){return q.cat==null;}).sort(QC.byHeat(now)) });
+      return cols;
+    }
+    /* due */
+    function bucket(q){ var d=QC.dueDaysLeft(q.due,now); if(d==null) return "nodate"; if(d<0) return "overdue"; if(d===0) return "today"; if(d<=6) return "week"; return "later"; }
+    var defs=[["overdue","Overdue"],["today","Today"],["week","This week"],["later","Later"],["nodate","No deadline"]];
+    return defs.map(function(d){
+      return { key:d[0], title:d[1], items:open.filter(function(q){return bucket(q)===d[0];}).sort(QC.byHeat(now)) };
+    });
+  }
+  function boardCard(q){
+    var uc=QC.urgencyColor(q), r=QC.reward(q), cat=QC.catById(state,q.cat);
+    var catTag = cat? '<span class="cat"><span class="cd" style="background:'+cat.color+'"></span>'+QC.esc(cat.name)+'</span>':'';
+    return '<div class="bcard" draggable="true" data-qid="'+q.id+'" style="--u:'+uc+'">'+
+      '<div class="bc-title">'+QC.esc(q.title)+'</div>'+
+      '<div class="bc-meta">'+dueChipHtml(q)+catTag+'<span>+'+r.gold+'g</span>'+
+        (q.started?'<span style="color:var(--good)">running</span>':'')+'</div>'+
+    '</div>';
+  }
+  function doneCard(c){
+    return '<div class="bcard done"><div class="bc-title">✓ '+QC.esc(c.title)+'</div>'+
+      '<div class="bc-meta"><span>'+QC.fmtDur(c.ms)+'</span><span>'+QC.fmtWhen(c.at)+'</span></div></div>';
+  }
+  function renderBoard(){
+    var board=$("board"); board.innerHTML="";
+    boardColumns().forEach(function(col){
+      var el=document.createElement("div"); el.className="bcol";
+      if(col.drop!=null) el.setAttribute("data-drop", col.drop);
+      var body = col.done
+        ? (col.items.length? col.items.map(doneCard).join("") : '<div class="colempty">Nothing yet.</div>')
+        : (col.items.length? col.items.map(boardCard).join("") : '<div class="colempty">—</div>');
+      el.innerHTML='<div class="ch"><span class="n">'+QC.esc(col.title)+'</span><span>'+col.items.length+'</span></div>'+body;
+      board.appendChild(el);
+    });
+  }
+  function clearOver(){ document.querySelectorAll(".bcol.over").forEach(function(c){c.classList.remove("over");}); }
+  function dropOnColumn(id, dropKey){
+    if(boardGroup==="status"){
+      if(dropKey==="done"){ QC.completeQuest(state,id); renderSidebar(); }
+      else QC.setStatus(state,id,dropKey);
+    } else if(boardGroup==="cat"){
+      QC.editQuest(state,id,{cat: dropKey==="none" ? null : +dropKey});
+    }
+  }
+  (function(){
+    var board=$("board");
+    board.addEventListener("dragstart",function(e){
+      var c=e.target.closest(".bcard[data-qid]"); if(!c){ return; }
+      draggedId=+c.getAttribute("data-qid"); c.classList.add("dragging");
+      try{ e.dataTransfer.effectAllowed="move"; e.dataTransfer.setData("text/plain",String(draggedId)); }catch(_){}
+    });
+    board.addEventListener("dragend",function(e){
+      var c=e.target.closest(".bcard"); if(c) c.classList.remove("dragging"); clearOver(); draggedId=null;
+    });
+    board.addEventListener("dragover",function(e){
+      var col=e.target.closest(".bcol[data-drop]"); if(!col||draggedId==null) return;
+      e.preventDefault(); clearOver(); col.classList.add("over");
+    });
+    board.addEventListener("drop",function(e){
+      var col=e.target.closest(".bcol[data-drop]"); if(!col||draggedId==null) return;
+      e.preventDefault(); dropOnColumn(draggedId, col.getAttribute("data-drop"));
+      draggedId=null; clearOver(); save(); renderBoard(); renderSidebar();
+    });
+  })();
+  $("board-group").addEventListener("change",function(){
+    boardGroup=this.value;
+    $("board-hint").textContent = boardGroup==="status" ? "Drag to change status."
+      : boardGroup==="cat" ? "Drag to recategorise." : "Read-only view by deadline.";
+    renderBoard();
   });
 
   /* ---------- RECURRING ---------- */
@@ -265,9 +466,12 @@
     if(state.recurring.length===0){ box.innerHTML='<p class="muted">No recurring quests yet.</p>'; return; }
     state.recurring.forEach(function(t){
       var when = t.repeat==="weekly" ? ("Weekly · "+DOW[t.weekday|0]) : (t.repeat==="weekdays"?"Weekdays":"Daily");
+      var cat=QC.catById(state,t.cat);
       var row=document.createElement("div"); row.className="qrow";
       row.innerHTML='<div class="qmain"><div class="line1"><b>'+QC.esc(t.title)+'</b><span class="pill">'+when+'</span>'+
-        '<span class="pill" style="text-transform:capitalize">'+t.diff+'</span></div>'+
+        '<span class="pill" style="text-transform:capitalize">'+t.diff+'</span>'+
+        (cat?'<span class="pill" style="color:'+cat.color+'">'+QC.esc(cat.name)+'</span>':'')+
+        (typeof t.dueOffset==="number"?'<span class="pill">due +'+t.dueOffset+'d</span>':'')+'</div>'+
         (t.obj?'<div class="muted">'+QC.esc(t.obj)+'</div>':'')+'</div>'+
         '<div class="acts"><button class="iconbtn" data-rdel="'+t.id+'" title="Delete">✕</button></div>';
       box.appendChild(row);
@@ -276,10 +480,13 @@
   $("nr-repeat").addEventListener("change",function(){ $("nr-weekday").style.display = this.value==="weekly"?"":"none"; });
   $("nr-add").addEventListener("click",function(){
     var t=$("nr-title").value.trim(); if(!t){ toast("Enter a title"); return; }
+    var off=$("nr-dueoff").value;
     QC.addRecurring(state,{title:t, obj:$("nr-obj").value.trim(), diff:$("nr-diff").value,
-      repeat:$("nr-repeat").value, weekday:+$("nr-weekday").value});
-    QC.rollover(state); /* spawn today's instance if due now */
-    $("nr-title").value=""; $("nr-obj").value=""; save(); renderRecurring(); renderQuests();
+      repeat:$("nr-repeat").value, weekday:+$("nr-weekday").value,
+      cat: $("nr-cat").value==="" ? null : +$("nr-cat").value,
+      dueOffset: off==="" ? undefined : Math.max(0, parseInt(off,10)||0)});
+    QC.rollover(state);
+    $("nr-title").value=""; $("nr-obj").value=""; $("nr-dueoff").value=""; save(); renderRecurring(); renderQuests();
   });
   $("recurring-list").addEventListener("click",function(e){
     var d=e.target.closest("[data-rdel]"); if(d){ QC.removeRecurring(state,+d.getAttribute("data-rdel")); save(); renderRecurring(); }
@@ -325,7 +532,8 @@
     var totalGold=state.goldEarned||0;
     var m=$("metrics"); m.innerHTML="";
     [["Quests done",state.completed.length],["Total time",state.totalMs?QC.fmtDur(state.totalMs):"0m"],
-     ["Current streak",QC.streak(state)+" d"],["Level",state.level],["Gold earned",totalGold.toLocaleString()]]
+     ["Current streak",QC.streak(state)+" d"],["Overdue",QC.overdueCount(state)],
+     ["Level",state.level],["Gold earned",totalGold.toLocaleString()]]
     .forEach(function(p){ var d=document.createElement("div"); d.className="metric";
       d.innerHTML='<div class="v">'+p[1]+'</div><div class="k">'+p[0]+'</div>'; m.appendChild(d); });
     var days=QC.statsByDay(state,14);
@@ -361,8 +569,13 @@
       if(!str){ return; }
       var inc; try{ inc=QC.normalize(JSON.parse(str)); }catch(e){ toast("That file isn't valid JSON."); return; }
       if(merge){
-        inc.quests.forEach(function(q){ q.id=QC.newId(state); delete q.fromRecurring; state.quests.push(q); });
-        inc.recurring.forEach(function(t){ t.id=QC.newId(state); t.lastDate=null; state.recurring.push(t); });
+        var catMap={};
+        (inc.categories||[]).forEach(function(c){
+          var ex=state.categories.find(function(x){return x.name===c.name;});
+          if(ex){ catMap[c.id]=ex.id; } else { var nc=QC.addCategory(state,{name:c.name,color:c.color}); catMap[c.id]=nc.id; }
+        });
+        inc.quests.forEach(function(q){ q.id=QC.newId(state); delete q.fromRecurring; if(q.cat!=null) q.cat=catMap[q.cat]||null; state.quests.push(q); });
+        inc.recurring.forEach(function(t){ t.id=QC.newId(state); t.lastDate=null; if(t.cat!=null) t.cat=catMap[t.cat]||null; state.recurring.push(t); });
         var seen={}; state.completed.forEach(function(c){ seen[c.at+"|"+c.title]=true; });
         inc.completed.forEach(function(c){ if(!seen[c.at+"|"+c.title]) state.completed.push(c); });
         state.completed.sort(function(a,b){ return b.at-a.at; });
@@ -371,7 +584,7 @@
       } else {
         state=inc; toast("Backup restored.");
       }
-      save(); renderAll();
+      save(); refreshCatSelects(); renderAll();
     });
   }
   $("bk-import-replace").addEventListener("click",function(){ doImport(false); });
@@ -382,13 +595,19 @@
     $("sb-lvl").textContent=state.level; $("sb-gold").textContent=(state.gold||0).toLocaleString();
     $("sb-xp").style.width=Math.min(100,Math.round(state.xp/state.xpMax*100))+"%";
   }
-  function renderAll(){ renderSidebar(); renderQuests(); renderRecurring(); renderHistory(); if(tab==="stats") renderStats(); }
+  function renderAll(){
+    refreshCatSelects();
+    renderSidebar(); renderCatManage(); renderQuests(); renderRecurring(); renderHistory();
+    if(tab==="board") renderBoard();
+    if(tab==="stats") renderStats();
+  }
 
   document.querySelectorAll(".navb").forEach(function(b){
     b.addEventListener("click",function(){
       tab=b.getAttribute("data-tab");
       document.querySelectorAll(".navb").forEach(function(x){ x.classList.toggle("active",x===b); });
       document.querySelectorAll(".sec").forEach(function(s){ s.classList.toggle("active", s.id==="tab-"+tab); });
+      if(tab==="board") renderBoard();
       if(tab==="stats") renderStats();
       if(tab==="history") renderHistory();
     });
