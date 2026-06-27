@@ -14,7 +14,8 @@ try:
     from PySide6.QtGui import (QGuiApplication, QIcon, QPixmap, QPainter,
                                QColor, QAction, QPainterPath)
     from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-                                   QPushButton, QLabel, QSystemTrayIcon, QMenu, QFileDialog)
+                                   QPushButton, QLabel, QSystemTrayIcon, QMenu, QFileDialog,
+                                   QSizeGrip)
     from PySide6.QtWebEngineWidgets import QWebEngineView
     from PySide6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
     from PySide6.QtWebChannel import QWebChannel
@@ -41,6 +42,7 @@ class Bridge(QObject):
     """Exposed to both web pages. Owns the shared JSON file on disk."""
     dataChanged = Signal()
     opacityRequested = Signal(float)
+    zoomRequested = Signal(float)
     openPanelRequested = Signal()
 
     def __init__(self, path):
@@ -95,6 +97,10 @@ class Bridge(QObject):
     @Slot(float)
     def setWindowOpacity(self, v):
         self.opacityRequested.emit(v)
+
+    @Slot(float)
+    def setZoom(self, v):
+        self.zoomRequested.emit(v)
 
     @Slot()
     def openPanel(self):
@@ -170,6 +176,7 @@ class HUD(QWidget):
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.resize(WIN_W, WIN_H)
+        self.setMinimumSize(190, 240)
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -188,11 +195,30 @@ class HUD(QWidget):
         self.page.load(QUrl.fromLocalFile(HUD_HTML))
         lay.addWidget(self.view, 1)
 
+        # bottom-right corner grip so the frameless overlay can be resized by dragging
+        self.grip = QSizeGrip(self)
+        self.grip.setFixedSize(16, 16)
+        self.grip.setToolTip("Drag to resize")
+        self.grip.move(self.width() - 16, self.height() - 16)
+        self.grip.raise_()
+
         self.bar.hideBtn.clicked.connect(self.hide)
         self.bar.quitBtn.clicked.connect(QApplication.instance().quit)
 
         self._restore_geometry()
         self._build_tray()
+
+    def set_zoom(self, factor):
+        try:
+            self.view.setZoomFactor(max(0.5, min(2.0, float(factor))))
+        except Exception:
+            pass
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        if hasattr(self, "grip"):
+            self.grip.move(self.width() - self.grip.width(), self.height() - self.grip.height())
+            self.grip.raise_()
 
     # ---- tray ----
     def _tray_pixmap(self):
@@ -327,6 +353,7 @@ def main():
     hud = HUD(profile, bridge, open_panel)
     bridge.openPanelRequested.connect(open_panel)
     bridge.opacityRequested.connect(hud.setWindowOpacity)
+    bridge.zoomRequested.connect(hud.set_zoom)
     hud.show()
     app.aboutToQuit.connect(hud.save_geometry)
 

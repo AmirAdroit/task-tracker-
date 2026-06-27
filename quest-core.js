@@ -12,6 +12,18 @@
   };
   var DIFF_ORDER = ["easy", "normal", "hard", "epic"];
 
+  /* Urgency is a separate axis from difficulty. Difficulty = reward size;
+     urgency = how soon it matters. Urgency is *derived* (from the due date +
+     a manual pin), never stored. rank is used for sorting (lower = hotter). */
+  var URGENCY = {
+    emergency: { color: "#e24b4a", label: "Emergency", rank: 0 },
+    high:      { color: "#ef9f27", label: "High",      rank: 1 },
+    normal:    { color: "#6e8efb", label: "Normal",    rank: 2 }
+  };
+
+  var CAT_COLORS = ["#378add", "#7f77dd", "#1d9e75", "#d4537e", "#ef9f27",
+                    "#97c459", "#d6743b", "#5dcaa5"];
+
   var ACHS = [
     { key: "first",   icon: "⚑", name: "First Blood — finish 1 quest" },
     { key: "five",    icon: "✦", name: "On a Roll — finish 5 quests" },
@@ -22,18 +34,23 @@
 
   function defaultState() {
     return {
-      version: 2,
+      version: 3,
       level: 1, xp: 0, xpMax: 100, gold: 0, goldEarned: 0, totalMs: 0,
-      nextId: 4,
-      quests: [
-        { id: 1, title: "Set up my quest HUD", obj: "You're looking at it", diff: "easy", started: null },
-        { id: 2, title: "Plan today's top task", obj: "Pick the one that matters", diff: "normal", started: null },
-        { id: 3, title: "Tackle the big one", obj: "The thing you keep avoiding", diff: "hard", started: null }
+      nextId: 24,
+      categories: [
+        { id: 1, name: "Work",     color: "#378add" },
+        { id: 2, name: "Personal", color: "#7f77dd" },
+        { id: 3, name: "Study",    color: "#1d9e75" }
       ],
-      recurring: [],   /* templates: {id,title,obj,diff,repeat,weekday,lastDate} */
-      completed: [],   /* {title, ms, at, gold, xp} */
+      quests: [
+        { id: 21, title: "Set up my quest HUD", obj: "You're looking at it", diff: "easy",   status: "active",  cat: null, due: null, pinned: false, started: null },
+        { id: 22, title: "Plan today's top task", obj: "Pick the one that matters", diff: "normal", status: "active",  cat: 1,    due: null, pinned: false, started: null },
+        { id: 23, title: "Tackle the big one", obj: "The thing you keep avoiding", diff: "hard", status: "backlog", cat: null, due: null, pinned: false, started: null }
+      ],
+      recurring: [],   /* templates: {id,title,obj,diff,repeat,weekday,lastDate,cat,dueOffset} */
+      completed: [],   /* {title, ms, at, gold, xp, cat} */
       ach: { first: false, five: false, gold500: false, deep: false, lvl5: false },
-      ui: { translucent: true, opacity: 1.0 }
+      ui: { translucent: true, opacity: 1.0, hudScale: 1.0 }
     };
   }
 
@@ -45,9 +62,18 @@
     if (!Array.isArray(s.quests)) s.quests = [];
     if (!Array.isArray(s.recurring)) s.recurring = [];
     if (!Array.isArray(s.completed)) s.completed = [];
+    if (!Array.isArray(s.categories)) s.categories = d.categories;
     if (!s.ach) s.ach = d.ach;
     if (!s.ui) s.ui = d.ui;
+    if (typeof s.ui.hudScale !== "number") s.ui.hudScale = 1.0;
     if (typeof s.nextId !== "number") s.nextId = 1;
+    /* heal the new per-quest fields on older saves */
+    s.quests.forEach(function (q) {
+      if (q.status !== "backlog") q.status = "active";
+      if (!("cat" in q)) q.cat = null;
+      if (!("due" in q)) q.due = null;
+      if (!("pinned" in q)) q.pinned = false;
+    });
     return s;
   }
 
@@ -75,6 +101,69 @@
     return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[c];
     });
+  }
+
+  /* ---------- deadlines / urgency ---------- */
+  function startOfDay(ts) { var d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime(); }
+  /* whole days from today to the due day: 0 = today, negative = overdue */
+  function dueDaysLeft(due, now) {
+    if (due == null) return null;
+    return Math.round((startOfDay(due) - startOfDay(now || Date.now())) / 86400000);
+  }
+  function urgency(q, now) {
+    if (q.pinned) return "emergency";
+    var d = dueDaysLeft(q.due, now);
+    if (d == null) return "normal";
+    if (d <= 0) return "emergency";
+    if (d <= 2) return "high";
+    return "normal";
+  }
+  function urgencyColor(q, now) { return URGENCY[urgency(q, now)].color; }
+  function fmtDue(due, now) {
+    var d = dueDaysLeft(due, now);
+    if (d == null) return "";
+    if (d < 0) return "overdue " + (-d) + "d";
+    if (d === 0) return "today";
+    if (d === 1) return "tomorrow";
+    if (d <= 6) return "in " + d + "d";
+    var dt = new Date(due);
+    return (dt.getMonth() + 1) + "/" + dt.getDate();
+  }
+  /* compare two quests for the overlay/board: hottest urgency, then soonest due, then order */
+  function byHeat(now) {
+    return function (a, b) {
+      var ua = URGENCY[urgency(a, now)].rank, ub = URGENCY[urgency(b, now)].rank;
+      if (ua !== ub) return ua - ub;
+      var da = a.due == null ? Infinity : a.due, db = b.due == null ? Infinity : b.due;
+      return da - db;
+    };
+  }
+
+  /* ---------- categories ---------- */
+  function catById(s, id) {
+    if (id == null) return null;
+    for (var i = 0; i < s.categories.length; i++) if (s.categories[i].id === id) return s.categories[i];
+    return null;
+  }
+  function addCategory(s, fields) {
+    var c = {
+      id: newId(s),
+      name: (fields.name || "New category").trim(),
+      color: fields.color || CAT_COLORS[s.categories.length % CAT_COLORS.length]
+    };
+    s.categories.push(c);
+    return c;
+  }
+  function editCategory(s, id, fields) {
+    var c = catById(s, id); if (!c) return;
+    if ("name" in fields) c.name = fields.name;
+    if ("color" in fields) c.color = fields.color;
+  }
+  function removeCategory(s, id) {
+    var i = s.categories.findIndex(function (c) { return c.id === id; });
+    if (i < 0) return;
+    s.categories.splice(i, 1);
+    s.quests.forEach(function (q) { if (q.cat === id) q.cat = null; });
   }
 
   /* ---------- progression ---------- */
@@ -115,6 +204,10 @@
       title: (fields.title || "Untitled quest").trim(),
       obj: fields.obj || "",
       diff: DIFF[fields.diff] ? fields.diff : "normal",
+      status: fields.status === "backlog" ? "backlog" : "active",
+      cat: (fields.cat != null) ? fields.cat : null,
+      due: (typeof fields.due === "number") ? fields.due : null,
+      pinned: !!fields.pinned,
       started: null
     };
     if (typeof fields.gold === "number") q.gold = fields.gold;
@@ -128,10 +221,22 @@
     if ("title" in fields) q.title = fields.title;
     if ("obj" in fields) q.obj = fields.obj;
     if ("diff" in fields && DIFF[fields.diff]) q.diff = fields.diff;
+    if ("cat" in fields) q.cat = (fields.cat == null ? null : fields.cat);
+    if ("due" in fields) q.due = (typeof fields.due === "number") ? fields.due : null;
+    if ("pinned" in fields) q.pinned = !!fields.pinned;
     if ("gold" in fields) { if (fields.gold === null) delete q.gold; else q.gold = fields.gold; }
     if ("xp" in fields) { if (fields.xp === null) delete q.xp; else q.xp = fields.xp; }
   }
-  function startQuest(s, id) { var i = findIdx(s, id); if (i >= 0) s.quests[i].started = Date.now(); }
+  /* move a quest between lanes. "backlog" parks it (and stops its timer);
+     "active" commits it; "doing" commits it and starts the timer. */
+  function setStatus(s, id, status) {
+    var i = findIdx(s, id); if (i < 0) return;
+    var q = s.quests[i];
+    if (status === "backlog") { q.status = "backlog"; q.started = null; }
+    else if (status === "doing") { q.status = "active"; if (!q.started) q.started = Date.now(); }
+    else { q.status = "active"; q.started = null; }
+  }
+  function startQuest(s, id) { var i = findIdx(s, id); if (i >= 0) { s.quests[i].started = Date.now(); s.quests[i].status = "active"; } }
   function removeQuest(s, id) { var i = findIdx(s, id); if (i >= 0) s.quests.splice(i, 1); }
   function moveQuest(s, id, dir) {
     var i = findIdx(s, id); if (i < 0) return;
@@ -142,7 +247,7 @@
     var i = findIdx(s, id); if (i < 0) return [];
     var q = s.quests[i], ms = q.started ? (Date.now() - q.started) : 0, r = reward(q);
     s.quests.splice(i, 1);
-    s.completed.unshift({ title: q.title, ms: ms, at: Date.now(), gold: r.gold, xp: r.xp });
+    s.completed.unshift({ title: q.title, ms: ms, at: Date.now(), gold: r.gold, xp: r.xp, cat: q.cat });
     s.gold += r.gold; s.goldEarned += r.gold; s.totalMs += ms;
     var ups = addXp(s, r.xp);
     checkAch(s);
@@ -165,7 +270,9 @@
     (s.recurring || []).forEach(function (t) {
       var already = s.quests.some(function (q) { return q.fromRecurring === t.id; });
       if (!already && recurDue(t, now)) {
-        var q = addQuest(s, { title: t.title, obj: t.obj, diff: t.diff });
+        var due = null;
+        if (typeof t.dueOffset === "number") due = startOfDay(now ? now.getTime() : Date.now()) + t.dueOffset * 86400000;
+        var q = addQuest(s, { title: t.title, obj: t.obj, diff: t.diff, cat: (t.cat != null ? t.cat : null), due: due });
         q.fromRecurring = t.id;
         t.lastDate = dayKey(now ? now.getTime() : Date.now());
         changed = true;
@@ -181,8 +288,10 @@
       diff: DIFF[fields.diff] ? fields.diff : "normal",
       repeat: ["daily", "weekdays", "weekly"].indexOf(fields.repeat) >= 0 ? fields.repeat : "daily",
       weekday: (fields.weekday | 0),
+      cat: (fields.cat != null) ? fields.cat : null,
       lastDate: null
     };
+    if (typeof fields.dueOffset === "number") t.dueOffset = fields.dueOffset;
     s.recurring.push(t);
     return t;
   }
@@ -212,6 +321,10 @@
     if (!have[dayKey(d.getTime())]) d = new Date(d.getTime() - 86400000);
     while (have[dayKey(d.getTime())]) { n += 1; d = new Date(d.getTime() - 86400000); }
     return n;
+  }
+  /* count of open quests (active or backlog) whose deadline has passed */
+  function overdueCount(s, now) {
+    return s.quests.filter(function (q) { var d = dueDaysLeft(q.due, now); return d != null && d < 0; }).length;
   }
 
   /* ---------- storage (bridge or localStorage) ---------- */
@@ -246,6 +359,7 @@
         importData: function (cb) { browserPick(cb); },
         onChange: function () {},
         setOpacity: function () {},
+        setZoom: function () {},
         openPanel: function () { alert("Control panel opens from the app tray menu."); }
       };
     }
@@ -261,6 +375,7 @@
             importData: function (cb) { b.importData(function (r) { cb(r); }); },
             onChange: function (fn) { b.dataChanged.connect(fn); },
             setOpacity: function (v) { b.setWindowOpacity(v); },
+            setZoom: function (v) { if (b.setZoom) b.setZoom(v); },
             openPanel: function () { b.openPanel(); }
           });
         });
@@ -271,14 +386,17 @@
   }
 
   root.QC = {
-    DIFF: DIFF, DIFF_ORDER: DIFF_ORDER, ACHS: ACHS,
+    DIFF: DIFF, DIFF_ORDER: DIFF_ORDER, URGENCY: URGENCY, CAT_COLORS: CAT_COLORS, ACHS: ACHS,
     defaultState: defaultState, normalize: normalize, newId: newId,
     fmtDur: fmtDur, fmtWhen: fmtWhen, fmtClock: fmtClock, dayKey: dayKey, esc: esc,
+    startOfDay: startOfDay, dueDaysLeft: dueDaysLeft, urgency: urgency, urgencyColor: urgencyColor,
+    fmtDue: fmtDue, byHeat: byHeat,
+    catById: catById, addCategory: addCategory, editCategory: editCategory, removeCategory: removeCategory,
     addXp: addXp, checkAch: checkAch, reward: reward,
-    addQuest: addQuest, editQuest: editQuest, startQuest: startQuest,
+    addQuest: addQuest, editQuest: editQuest, setStatus: setStatus, startQuest: startQuest,
     removeQuest: removeQuest, moveQuest: moveQuest, completeQuest: completeQuest,
     rollover: rollover, addRecurring: addRecurring, removeRecurring: removeRecurring,
-    statsByDay: statsByDay, streak: streak,
+    statsByDay: statsByDay, streak: streak, overdueCount: overdueCount,
     makeStore: makeStore
   };
 })(window);
