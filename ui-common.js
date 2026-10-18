@@ -12,22 +12,48 @@
   U.dateTime = function (ts) { if (!ts) return ''; var d = new Date(ts); return Q.dayKey(ts) + 'T' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); };
   U.button = function (action, label, id, extra) { return '<button type="button" data-action="' + action + '"' + (id == null ? '' : ' data-id="' + id + '"') + ' ' + (extra || '') + '>' + Q.esc(label) + '</button>'; };
   U.notice = function (message, error) { var n = document.getElementById('notice'); if (!n) { n = document.createElement('div'); n.id = 'notice'; document.body.appendChild(n); } n.textContent = message; n.className = error ? 'error' : ''; n.hidden = false; clearTimeout(U.noticeTimer); U.noticeTimer = setTimeout(function () { n.hidden = true; }, error ? 12000 : 3500); };
+  U.acceptState = function (snapshot) {
+    // QWebChannel replies can arrive after a newer dataChanged snapshot.
+    if (!U.state || Number(snapshot.revision || 0) >= Number(U.state.revision || 0)) U.state = snapshot;
+  };
   U.dialog = function (title, body, save, submitLabel) {
-    var d = document.getElementById('editor');
-    if (!d) { d = document.createElement('dialog'); d.id = 'editor'; document.body.appendChild(d); }
-    if (d.open) d.close();
-    if (!d.dataset.refreshHook) { d.dataset.refreshHook = '1'; d.addEventListener('close', function () { if(U.render) U.render(true); }); }
+    var previous = document.getElementById('editor');
+    if (previous) { if (previous.open) previous.close(); previous.remove(); }
+    // Each editor owns its DOM. A delayed callback may close only that editor.
+    var d = document.createElement('dialog'); d.id = 'editor'; document.body.appendChild(d);
+    d.addEventListener('close', function () { if (U.render) U.render(true); });
     d.innerHTML = '<form id="edit-form"><header><h2>' + Q.esc(title) + '</h2><button type="button" data-cancel aria-label="Close">×</button></header><div class="form-grid">' + body + '</div><p id="form-error" role="alert"></p><footer><button type="button" data-cancel>Cancel</button><button class="primary" type="submit">' + Q.esc(submitLabel || 'Save') + '</button></footer></form>';
     d.querySelectorAll('[data-cancel]').forEach(function (b) { b.onclick = function () { d.close(); }; });
-    d.querySelector('form').onsubmit = function (e) { e.preventDefault(); try { save(U.values(e.target), e.target, d); } catch (err) { d.querySelector('#form-error').textContent = err.message; } };
+    d.querySelector('form').onsubmit = function (e) {
+      e.preventDefault(); if (e.target.dataset.pending) return;
+      var previousForm = U.commandForm; U.commandForm = e.target;
+      try { save(U.values(e.target), e.target, d); }
+      catch (err) { d.querySelector('#form-error').textContent = err.message; }
+      finally { U.commandForm = previousForm; }
+    };
     d.showModal(); return d;
   };
   U.dispatch = function (type, payload, done) {
-    U.store.dispatch({type: type, payload: payload || {}}, function (result) {
-      if (result.state) U.state = result.state;
-      if (!result.ok) { var error = document.getElementById('form-error'); if (error) error.textContent = result.error; U.notice(result.error, true); return; }
-      if (done) done(result.state); if (U.render) U.render(type === 'review.save');
-    });
+    var form = U.commandForm, controls = [];
+    if (form) {
+      if (form.dataset.pending) return;
+      form.dataset.pending = '1'; form.setAttribute('aria-busy', 'true');
+      form.querySelectorAll('input,select,textarea,button:not([data-cancel])').forEach(function (el) { controls.push([el, el.disabled]); el.disabled = true; });
+      var message = form.querySelector('#form-error'); if (message) message.textContent = '';
+    }
+    function unlock() {
+      if (!form) return;
+      delete form.dataset.pending; form.removeAttribute('aria-busy');
+      controls.forEach(function (item) { item[0].disabled = item[1]; });
+    }
+    try {
+      U.store.dispatch({type: type, payload: payload || {}}, function (result) {
+        unlock();
+        if (result.state) U.acceptState(result.state);
+        if (!result.ok) { var error = form && form.querySelector('#form-error'); if (error) error.textContent = result.error; U.notice(result.error, true); return; }
+        if (done) done(U.state); if (U.render) U.render(type === 'review.save');
+      });
+    } catch (error) { unlock(); throw error; }
   };
   U.start = function (taskId) {
     var q = Q.find(U.state, 'quests', taskId);
@@ -58,7 +84,7 @@
     U.render = render;
     Q.makeStore(function (store) {
       U.store = store;
-      function load() { store.load(function (text) { try { U.state = Q.normalize(JSON.parse(text)); render(true); } catch (e) { U.notice('Could not read saved data: ' + e.message, true); } }); }
+      function load() { store.load(function (text) { try { U.acceptState(Q.normalize(JSON.parse(text))); render(true); } catch (e) { U.notice('Could not read saved data: ' + e.message, true); } }); }
       load(); store.onChange(load); if (store.onNavigate) store.onNavigate(function (route) { if (U.navigate) U.navigate(route); });
     });
     setInterval(function () {

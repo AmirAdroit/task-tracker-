@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.0.3 — control-panel UI stability
+
+- Prevent repeated form submissions and keep delayed replies/errors scoped to their original editor; reject stale UI snapshots.
+- Preserve unsaved Settings while editing categories, selected archived relationships, and completed-task allocation selections.
+- Fix lost clicks after changing filters, keyboard focus, same-view scroll restoration and stale cancelled drag state.
+- Keep long-form Save/Cancel actions visible, prevent background scrolling behind editors and wrap long project/goal text inside the panel.
+- Add delayed-response, menu-traversal, mouse/keyboard and small-window UI regressions. No domain model, data-format, timer, reward or scheduling changes.
+
 ## 4.0.2 — clearer routines, board alerts and reversible days off
 
 - Show only relevant recurrence controls, with explicit Monday–Friday wording and whole-day interval validation.

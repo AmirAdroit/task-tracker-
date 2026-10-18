@@ -2,7 +2,8 @@
   'use strict';
   var U = window.QUI, Q = window.QC, E = Q.esc, B = U.button, content = document.getElementById('content');
   var view = 'today', selectedDay, weekDay, reviewDay = null, periodId = '', questMode = 'list';
-  var filters = {search: '', status: '', cat: '', project: ''}, reviewOpen = false, settingsDirty = false, renderedDay = null;
+  var filters = {search: '', status: '', cat: '', project: ''}, reviewOpen = false, settingsDirty = false, renderedDay = null, renderedView = null;
+  var pointerAction = null, selectionTimer, pendingSelectionView = null;
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   function state() { return U.state; }
   function today() { return Q.trackingDay(state()); }
@@ -11,6 +12,11 @@
   function metric(value, label) { return '<div class="metric"><strong>' + E(value) + '</strong><small>' + E(label) + '</small></div>'; }
   function name(group, id) { var x = Q.find(state(), group, id); return x ? x.title || x.name : ''; }
   function active(group) { return state()[group].filter(function (x) { return !x.archived; }); }
+  function choices(group, selected) {
+    return state()[group].filter(function (x) { return !x.archived || x.id === selected; }).map(function (x) {
+      return x.archived ? Object.assign({}, x, {title: (x.title || x.name) + ' (archived)'}) : x;
+    });
+  }
   function taskCard(q, compact) {
     var actual = Q.taskEffort(state(), q.id, Date.now()), category = Q.catById(state(), q.cat), checklist = q.checklist || [];
     return '<article class="task" draggable="true" data-task="' + q.id + '"><div class="task-top"><b class="task-title" dir="auto">' + E(q.title) + '</b><span class="pill">' + E(q.status) + '</span></div>' + (!compact && q.obj ? '<p class="hint" dir="auto">' + E(q.obj) + '</p>' : '') + '<div class="meta">' + (category ? '<span>' + E(category.name) + '</span>' : '') + (q.projectId ? '<span>▦ ' + E(name('projects', q.projectId)) + '</span>' : '<span>Standalone</span>') + (q.fromRecurring ? '<span>↻ ' + E(q.occurrenceDay || 'Legacy occurrence') + '</span>' : '') + (q.manualOccurrence ? '<span>Added by you</span>' : '') + (q.due ? '<span class="warning">Due ' + E(Q.fmtDue(q.due)) + '</span>' : '') + '<span>' + E(Q.fmtDur(actual)) + ' logged' + (q.estimateMinutes ? ' / ' + q.estimateMinutes + 'm estimated' : '') + '</span>' + (checklist.length ? '<span>' + checklist.filter(function (c) { return c.done; }).length + '/' + checklist.length + ' checklist</span>' : '') + '<span>+' + Q.reward(q).xp + ' XP</span></div>' + (q.legacyTimerNeedsReview ? '<p class="warning">An old unbounded timer was stopped during upgrade; log its actual effort manually.</p>' : '') + '<div class="actions">' + (q.status !== 'done' ? B('start', 'Start session', q.id) + B('complete', '✓ Complete', q.id, q.fromRecurring ? 'data-day="' + q.occurrenceDay + '"' : '') + B('schedule', 'Schedule', q.id) : '') + B('log', 'Log time', q.id, q.fromRecurring ? 'data-day="' + q.occurrenceDay + '"' : '') + B('task-edit', 'Edit', q.id) + '</div>' + (!compact ? checklist.map(function(c,i){ return '<label class="check"><input type="checkbox" data-check-task="'+q.id+'" data-check-index="'+i+'"'+(c.done?' checked':'')+'><span dir="auto">'+E(c.title)+'</span></label>'; }).join('') : '') + '</article>';
@@ -26,6 +32,7 @@
   }
   function weekStart(day) { var d = new Date(day + 'T12:00:00'); return Q.shiftDay(day, -((d.getDay() - state().settings.weekStart + 7) % 7)); }
   function renderPlanner() {
+    if (periodId && !active('periods').some(function (p) { return p.id === Number(periodId); })) periodId = '';
     var s = state(), periods = active('periods'), chosen = Q.find(s, 'periods', Number(periodId)), start = weekStart(weekDay || today());
     var goals = active('goals').filter(function (g) { return !periodId || g.periodId === Number(periodId); });
     var projects = active('projects').filter(function (p) { return !periodId || goals.some(function (g) { return g.id === p.goalId; }); });
@@ -88,12 +95,17 @@
     document.getElementById('character').innerHTML = '<b>Level ' + s.level + '</b> · ' + s.gold + ' gold<progress value="' + s.xp + '" max="' + s.xpMax + '"></progress><small>' + s.xp + ' / ' + s.xpMax + ' XP</small>';
     btn.hidden = !pending.length; btn.textContent = pending.length + ' pending daily review(s)';
     document.getElementById('mode').textContent = U.store.kind === 'bridge' ? 'Saved locally · offline' : 'Browser preview · desktop reminders unavailable';
-    if (document.querySelector('dialog[open]') || (background && (settingsDirty || (document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))))) { document.getElementById('update').hidden = false; return; }
+    if (document.querySelector('dialog[open]') || (view === 'settings' && settingsDirty) || (background && document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))) { document.getElementById('update').hidden = false; return; }
+    var sameView = renderedView === view, top = window.scrollY;
+    var scrollers = Array.from(content.querySelectorAll('.board,.week,.table-wrap')).map(function (el) { return [el.scrollLeft, el.scrollTop]; });
     renderedDay = today();
     document.getElementById('update').hidden = true;
     document.querySelectorAll('[data-view]').forEach(function (b) { b.classList.toggle('active', b.dataset.view === view); });
     content.innerHTML = ({today: renderToday, planner: renderPlanner, journal: renderJournal, quests: renderQuests, routines: renderRoutines, stats: renderStats, settings: renderSettings}[view])();
+    renderedView = view;
     syncBoardSettings();
+    if (sameView) content.querySelectorAll('.board,.week,.table-wrap').forEach(function (el, i) { if (scrollers[i]) { el.scrollLeft = scrollers[i][0]; el.scrollTop = scrollers[i][1]; } });
+    window.scrollTo(0, sameView ? top : 0);
   }
   function navigate(route, fromNative) {
     if (fromNative && document.querySelector('dialog[open]')) { U.notice('Your board or review is waiting. Finish this edit first.'); return; }
@@ -108,7 +120,7 @@
   U.navigate = function(route){ navigate(route, true); };
   function taskDialog(id, projectId) {
     var q = id ? Q.find(state(), 'quests', id) : {projectId: projectId || null, status: 'active', diff: 'normal', checklist: []};
-    var d = U.dialog(id ? 'Edit quest' : 'New quest', U.field('title', 'Title', q.title, 'text', 'dir="auto" required') + U.select('projectId', 'Project (optional)', active('projects'), q.projectId, 'Standalone task') + U.area('obj', 'Objective / definition of done', q.obj) + U.select('cat', 'Category', state().categories, q.cat, 'Uncategorized') + U.select('diff', 'Difficulty / reward', Q.DIFF_ORDER.map(function (x) { return {value: x, label: x}; }), q.diff) + U.select('status', 'Status', ['active', 'backlog', 'doing', 'waiting', 'done'].map(function (x) { return {value: x, label: x}; }), q.status) + U.field('due', 'Deadline', q.due ? Q.dayKey(q.due) : '', 'date') + U.field('estimateMinutes', 'Total estimated effort (minutes)', q.estimateMinutes, 'number', 'min="1"') + U.field('sessionMinutes', 'Default session (minutes)', q.sessionMinutes, 'number', 'min="1" max="1440"') + U.field('gold', 'Custom gold reward (optional)', q.gold, 'number', 'min="0"') + U.field('xp', 'Custom XP reward (optional)', q.xp, 'number', 'min="0"') + U.select('milestoneId', 'Milestone (optional)', active('milestones').filter(function (m) { return m.projectId === q.projectId; }), q.milestoneId, 'No milestone') + U.check('pinned', 'Pin as urgent', q.pinned) + U.area('checklist', 'Checklist (one item per line, prefix completed items with [x])', q.checklist.map(function (c) { return (c.done ? '[x] ' : '') + c.title; }).join('\n')) + (id ? '<div class="wide">' + B('task-archive', 'Archive task', id) + '</div>' : ''), function (f, form, dialog) {
+    var d = U.dialog(id ? 'Edit quest' : 'New quest', U.field('title', 'Title', q.title, 'text', 'dir="auto" required') + U.select('projectId', 'Project (optional)', choices('projects', q.projectId), q.projectId, 'Standalone task') + U.area('obj', 'Objective / definition of done', q.obj) + U.select('cat', 'Category', choices('categories', q.cat), q.cat, 'Uncategorized') + U.select('diff', 'Difficulty / reward', Q.DIFF_ORDER.map(function (x) { return {value: x, label: x}; }), q.diff) + U.select('status', 'Status', ['active', 'backlog', 'doing', 'waiting', 'done'].map(function (x) { return {value: x, label: x}; }), q.status) + U.field('due', 'Deadline', q.due ? Q.dayKey(q.due) : '', 'date') + U.field('estimateMinutes', 'Total estimated effort (minutes)', q.estimateMinutes, 'number', 'min="1"') + U.field('sessionMinutes', 'Default session (minutes)', q.sessionMinutes, 'number', 'min="1" max="1440"') + U.field('gold', 'Custom gold reward (optional)', q.gold, 'number', 'min="0"') + U.field('xp', 'Custom XP reward (optional)', q.xp, 'number', 'min="0"') + U.select('milestoneId', 'Milestone (optional)', choices('milestones', q.milestoneId).filter(function (m) { return m.projectId === q.projectId; }), q.milestoneId, 'No milestone') + U.check('pinned', 'Pin as urgent', q.pinned) + U.area('checklist', 'Checklist (one item per line, prefix completed items with [x])', q.checklist.map(function (c) { return (c.done ? '[x] ' : '') + c.title; }).join('\n')) + (id ? '<div class="wide">' + B('task-archive', 'Archive task', id) + '</div>' : ''), function (f, form, dialog) {
       var fields = {title: f.title, obj: f.obj, gold: U.num(f.gold), xp: U.num(f.xp), projectId: U.num(f.projectId), milestoneId: U.num(f.milestoneId), cat: U.num(f.cat), diff: f.diff, status: f.status, due: f.due ? new Date(f.due + 'T12:00:00').getTime() : null, pinned: !!f.pinned, estimateMinutes: U.num(f.estimateMinutes), sessionMinutes: U.num(f.sessionMinutes), checklist: f.checklist.split('\n').filter(function (l) { return l.trim(); }).map(function (l) { return {title: l.replace(/^\[x\]\s*/i, '').trim(), done: /^\[x\]/i.test(l)}; })};
       U.dispatch(id ? 'task.edit' : 'task.add', id ? {id: id, fields: fields} : fields, function () { dialog.close(); });
     });
@@ -116,7 +128,7 @@
   }
   function scheduleDialog(taskId, day, allocation) {
     var a = allocation || {}, task = Q.find(state(), 'quests', taskId || a.taskId);
-    U.dialog('Schedule effort', U.select('taskId', 'Task', state().quests.filter(function (q) { return !q.archived && q.status !== 'done'; }), taskId || a.taskId, 'Choose a task') + U.field('day', 'Tracking day', day || a.day || today(), 'date', 'required') + U.field('minutes', 'Planned effort (minutes)', a.minutes || (task && task.sessionMinutes) || state().settings.sessionMinutes, 'number', 'min="1" max="1440" required'), function (f, form, d) { U.dispatch('allocation.save', {id: a.id || null, taskId: Number(f.taskId), day: f.day, minutes: Number(f.minutes)}, function () { d.close(); }); });
+    U.dialog('Schedule effort', U.select('taskId', 'Task', state().quests.filter(function (q) { return q.id === a.taskId || (!q.archived && q.status !== 'done'); }), taskId || a.taskId, 'Choose a task') + U.field('day', 'Tracking day', day || a.day || today(), 'date', 'required') + U.field('minutes', 'Planned effort (minutes)', a.minutes || (task && task.sessionMinutes) || state().settings.sessionMinutes, 'number', 'min="1" max="1440" required'), function (f, form, d) { U.dispatch('allocation.save', {id: a.id || null, taskId: Number(f.taskId), day: f.day, minutes: Number(f.minutes)}, function () { d.close(); }); });
   }
   function routineDialog(id) {
     var t = id ? Q.find(state(), 'recurring', id) : {repeat: 'daily', diff: 'normal', days: [1], weekday: 1};
@@ -125,7 +137,7 @@
       '<div data-repeat="interval">' + U.field('every', 'Repeat every (days)', t.every || 2, 'number', 'min="1" max="365" step="1" required') + '</div>' +
       '<div data-repeat="weekly">' + U.select('weekday', 'Day of the week', DOW.map(function (l, i) { return {value: i, label: l}; }), t.weekday) + '</div>' +
       '<div class="wide" data-repeat="selected"><label>Repeat on</label><div class="weekday-options">' + DOW.map(function (label, i) { return U.check('dow-' + i, label, (t.days || []).indexOf(i) >= 0); }).join('') + '</div></div>' +
-      '<div id="routine-start">' + U.field('start', 'Start date (optional)', t.start, 'date') + '</div>' + U.field('end', 'End date (optional)', t.end, 'date') + U.field('estimateMinutes', 'Estimated effort per occurrence (minutes)', t.estimateMinutes, 'number', 'min="1"') + U.field('sessionMinutes', 'Default session (minutes)', t.sessionMinutes, 'number', 'min="1" max="1440"') + U.select('cat', 'Category', state().categories, t.cat, 'Uncategorized') + U.select('diff', 'Difficulty', Q.DIFF_ORDER.map(function (v) { return {value: v, label: v}; }), t.diff) + U.select('projectId', 'Project (optional)', active('projects'), t.projectId, 'Standalone routine') + U.field('dueOffset', 'Deadline offset in days (optional)', t.dueOffset, 'number', 'min="0"'), function (f, form, d) {
+      '<div id="routine-start">' + U.field('start', 'Start date (optional)', t.start, 'date') + '</div>' + U.field('end', 'End date (optional)', t.end, 'date') + U.field('estimateMinutes', 'Estimated effort per occurrence (minutes)', t.estimateMinutes, 'number', 'min="1"') + U.field('sessionMinutes', 'Default session (minutes)', t.sessionMinutes, 'number', 'min="1" max="1440"') + U.select('cat', 'Category', choices('categories', t.cat), t.cat, 'Uncategorized') + U.select('diff', 'Difficulty', Q.DIFF_ORDER.map(function (v) { return {value: v, label: v}; }), t.diff) + U.select('projectId', 'Project (optional)', choices('projects', t.projectId), t.projectId, 'Standalone routine') + U.field('dueOffset', 'Deadline offset in days (optional)', t.dueOffset, 'number', 'min="0"'), function (f, form, d) {
       var fields = {title: f.title, obj: f.obj, repeat: f.repeat, start: f.start || null, end: f.end || null, estimateMinutes: U.num(f.estimateMinutes), sessionMinutes: U.num(f.sessionMinutes), cat: U.num(f.cat), projectId: U.num(f.projectId), diff: f.diff, dueOffset: U.num(f.dueOffset)};
       if (f.repeat === 'interval') fields.every = Number(f.every);
       if (f.repeat === 'weekly') fields.weekday = Number(f.weekday);
@@ -169,9 +181,9 @@
   function entityDialog(group, id, projectId) {
     var x = id ? Q.find(state(), group, id) : {}, body = U.field('title', group === 'categories' ? 'Category name' : 'Title', x.title || x.name, 'text', 'dir="auto" required');
     if (group === 'periods') body += U.field('start', 'Start', x.start || today(), 'date', 'required') + U.field('end', 'End', x.end || Q.shiftDay(today(), 90), 'date', 'required') + '<div class="actions wide">' + B('period-13', '13 weeks from start') + B('period-quarter', 'Calendar quarter containing start') + '</div>';
-    if (group === 'goals') body += U.area('success', 'Success criterion', x.success) + U.select('periodId', 'Planning period', active('periods'), x.periodId || Number(periodId), 'No period') + U.check('done', 'Goal achieved', x.done);
-    if (group === 'projects') body += U.area('description', 'Description', x.description) + U.select('goalId', 'Goal (optional)', active('goals'), x.goalId, 'Independent project');
-    if (group === 'milestones') body += U.select('projectId', 'Project', active('projects'), x.projectId || projectId) + U.field('targetDay', 'Target date', x.targetDay, 'date') + U.check('done', 'Milestone achieved', x.done);
+    if (group === 'goals') body += U.area('success', 'Success criterion', x.success) + U.select('periodId', 'Planning period', choices('periods', x.periodId), x.periodId || Number(periodId), 'No period') + U.check('done', 'Goal achieved', x.done);
+    if (group === 'projects') body += U.area('description', 'Description', x.description) + U.select('goalId', 'Goal (optional)', choices('goals', x.goalId), x.goalId, 'Independent project');
+    if (group === 'milestones') body += U.select('projectId', 'Project', choices('projects', x.projectId || projectId), x.projectId || projectId) + U.field('targetDay', 'Target date', x.targetDay, 'date') + U.check('done', 'Milestone achieved', x.done);
     if (group === 'categories') body += U.field('color', 'Color', x.color || '#6e8efb', 'color');
     if (id && group !== 'categories') body += '<div class="wide">' + B('entity-archive', 'Archive', id, 'data-group="' + group + '"') + '</div>';
     U.dialog(id ? 'Edit ' + group.replace(/s$/, '') : 'New ' + group.replace(/s$/, ''), body, function (f, form, d) {
@@ -183,6 +195,27 @@
   }
   function offDialog(day) { var d = day || selectedDay || today(); U.dialog('Plan days off', U.field('start', 'First tracking day', d, 'date', 'required') + U.field('end', 'Last tracking day (inclusive)', d, 'date', 'required') + U.field('label', 'Label', 'Day off') + '<p class="hint wide">Automatic routines and daily reviews are suppressed. Board reminders, optional routines and manual logging remain available.</p>', function (f, form, dialog) { U.dispatch('dayOff.save', f, function () { dialog.close(); }); }); }
   function reviewPayload() { var form = document.getElementById('review-form'), f = U.values(form), outcomes = {}; Object.keys(f).forEach(function (k) { if (k.indexOf('outcome-') === 0 && f[k]) outcomes[k.slice(8)] = f[k]; }); return {day: form.dataset.day, note: f.note, outcomes: outcomes}; }
+  function refreshSelection() {
+    var sourceView = view;
+    clearTimeout(selectionTimer);
+    selectionTimer = setTimeout(function () {
+      if (sourceView !== view) return;
+      // A blur/change can run between a button's mouse-down and click. Do not
+      // replace that button until its action has received the click.
+      if (pointerAction) { pendingSelectionView = sourceView; return; }
+      var focused = document.activeElement, name = focused && focused.name;
+      var keepFocus = name && /^(filter-|journal-day$|period-filter$)/.test(name);
+      var start = keepFocus ? focused.selectionStart : null, end = keepFocus ? focused.selectionEnd : null;
+      render();
+      if (keepFocus) {
+        var replacement = document.querySelector('[name="' + name + '"]');
+        if (replacement) { replacement.focus({preventScroll:true}); if (start != null && replacement.setSelectionRange) replacement.setSelectionRange(start, end); }
+      }
+    }, 0);
+  }
+  document.addEventListener('pointerdown', function (e) { pointerAction = e.target.closest('button,[data-action],[data-view],[data-check-task]'); }, true);
+  document.addEventListener('pointercancel', function () { pointerAction = null; pendingSelectionView = null; });
+  document.addEventListener('keydown', function () { pointerAction = null; }, true);
   document.addEventListener('click', function (e) {
     var nav = e.target.closest('[data-view]'); if (nav) { navigate(nav.dataset.view); return; }
     var b = e.target.closest('[data-action]'); if (!b || !U.state) return;
@@ -190,7 +223,7 @@
     if (U.handleSession(b)) return;
     if (a === 'task-new' || a === 'task-edit') taskDialog(a === 'task-edit' ? id : null, Number(b.dataset.project));
     else if (a === 'complete') U.dispatch('task.complete', {id: id, day: b.dataset.day});
-    else if (a === 'task-archive') U.dispatch('task.archive', {id: id}, function () { document.getElementById('editor').close(); });
+    else if (a === 'task-archive') { d = b.closest('dialog'); U.dispatch('task.archive', {id: id}, function () { if (d) d.close(); }); }
     else if (a === 'log') U.log(id || null, b.dataset.day || (view === 'journal' ? selectedDay : reviewOpen && reviewDay || today()));
     else if (a === 'log-edit') U.log(null, selectedDay, Q.find(s, 'sessions', id));
     else if (a === 'log-delete') { if (confirm('Delete this time entry? Completion history is kept.')) U.dispatch('log.delete', {id: id}); }
@@ -203,7 +236,7 @@
     else if (a.indexOf('routine-') === 0) U.dispatch('routine.state', {id: id, state: { 'routine-pause': 'paused', 'routine-resume': 'active', 'routine-archive': 'archived'}[a]});
     else if (a === 'entity-new' || a === 'entity-edit') entityDialog(b.dataset.group, a === 'entity-edit' ? id : null);
     else if (a === 'milestone-new') entityDialog('milestones', null, id);
-    else if (a === 'entity-archive') U.dispatch('entity.archive', {id: id, group: b.dataset.group}, function () { document.getElementById('editor').close(); });
+    else if (a === 'entity-archive') { d = b.closest('dialog'); U.dispatch('entity.archive', {id: id, group: b.dataset.group}, function () { if (d) d.close(); }); }
     else if (a === 'off') offDialog(b.dataset.day);
     else if (a === 'off-clear-day') U.dispatch('dayOff.clear', {start:b.dataset.day, end:b.dataset.day}, function(){U.notice('Day off removed');});
     else if (a === 'off-clear-range') U.dialog('Remove days off', U.field('start','First day',today(),'date','required') + U.field('end','Last day (inclusive)',today(),'date','required') + '<p class="hint wide">Only these dates will become normal days. Other dates in your time-off periods stay unchanged.</p>', function(f,form,d){U.dispatch('dayOff.clear',f,function(){d.close();U.notice('Days off removed');});}, 'Remove days off');
@@ -230,22 +263,31 @@
     if (e.target.closest('#settings-form')) settingsDirty = true;
     if (n === 'boardMode' || n === 'boardEnabled') syncBoardSettings();
     if (e.target.dataset.checkTask) U.dispatch('task.check', {id:Number(e.target.dataset.checkTask), index:Number(e.target.dataset.checkIndex), done:e.target.checked});
-    if (n === 'journal-day') { selectedDay = e.target.value; e.target.blur(); render(); }
-    if (n === 'period-filter') { periodId = e.target.value; var selectedPeriod=Q.find(state(),'periods',Number(periodId)); if(selectedPeriod) weekDay=selectedPeriod.start; e.target.blur(); render(); }
-    if (n && n.indexOf('filter-') === 0) { filters[n.slice(7)] = e.target.value; e.target.blur(); render(); }
+    if (n === 'journal-day') { selectedDay = e.target.value; refreshSelection(); }
+    if (n === 'period-filter') { periodId = e.target.value; var selectedPeriod=Q.find(state(),'periods',Number(periodId)); if(selectedPeriod) weekDay=selectedPeriod.start; refreshSelection(); }
+    if (n && n.indexOf('filter-') === 0) { filters[n.slice(7)] = e.target.value; refreshSelection(); }
     if (e.target.closest('#review-form')) U.dispatch('review.save', reviewPayload());
+  });
+  document.addEventListener('click', function () {
+    pointerAction = null;
+    var changedView = pendingSelectionView; pendingSelectionView = null;
+    if (changedView === view && !document.querySelector('dialog[open]')) render(true);
   });
   document.addEventListener('input', function (e) { if (e.target.closest('#settings-form')) settingsDirty = true; if (e.target.closest('#review-form') && e.target.name === 'note') U.dispatch('review.save', reviewPayload()); });
   document.addEventListener('submit', function (e) {
     if (e.target.id !== 'settings-form') return;
+    if (e.target.dataset.pending) { e.preventDefault(); return; }
     e.preventDefault(); var f = U.values(e.target), hours = DOW.map(function (v, i) { return U.num(f['hours-' + i]); });
     var previous = state().settings.boardReminder;
     var board = {enabled:!!f.boardEnabled,mode:f.boardMode,time:f.boardTime == null ? previous.time : f.boardTime,intervalMinutes:f.boardHours == null ? previous.intervalMinutes : U.num(f.boardHours) == null ? null : Number(f.boardHours)*60,days:DOW.map(function(v,i){return i;}).filter(function(i){return !!f['board-day-'+i];}),windowStart:f.boardStart == null ? previous.windowStart : f.boardStart,windowEnd:f.boardEnd == null ? previous.windowEnd : f.boardEnd};
-    U.dispatch('settings.save', {fields: {boardReminder:board, reviewTime: f.reviewTime, reviewEvery: Number(f.reviewEvery), dayBoundary: Number(f.dayBoundary), sessionMinutes: Number(f.sessionMinutes), weekStart: Number(f.weekStart), availability: hours, reviewEnabled: !!f.reviewEnabled, startup: !!f.startup}}, function () { settingsDirty = false; document.activeElement.blur(); U.notice('Settings saved'); });
+    U.commandForm = e.target;
+    try { U.dispatch('settings.save', {fields: {boardReminder:board, reviewTime: f.reviewTime, reviewEvery: Number(f.reviewEvery), dayBoundary: Number(f.dayBoundary), sessionMinutes: Number(f.sessionMinutes), weekStart: Number(f.weekStart), availability: hours, reviewEnabled: !!f.reviewEnabled, startup: !!f.startup}}, function () { settingsDirty = false; document.activeElement.blur(); U.notice('Settings saved'); }); }
+    finally { U.commandForm = null; }
   });
   var dragged = null;
   document.addEventListener('dragstart', function (e) { var card = e.target.closest('[data-task]'); if (card) { dragged = Number(card.dataset.task); e.dataTransfer.setData('text/plain', String(dragged)); } });
   document.addEventListener('dragover', function (e) { if (e.target.closest('[data-drop-day],[data-drop-status]')) e.preventDefault(); });
+  document.addEventListener('dragend', function () { dragged = null; });
   document.addEventListener('drop', function (e) { var target = e.target.closest('[data-drop-day],[data-drop-status]'); if (!target || !dragged) return; e.preventDefault(); if (target.dataset.dropDay) U.dispatch('allocation.save', {taskId: dragged, day: target.dataset.dropDay, minutes: Q.find(state(), 'quests', dragged).sessionMinutes || state().settings.sessionMinutes}); else if (target.dataset.dropStatus === 'done') U.dispatch('task.complete', {id: dragged}); else U.dispatch('task.edit', {id: dragged, fields: {status: target.dataset.dropStatus}}); dragged = null; });
   document.getElementById('pending').onclick = function () { navigate('review:' + (Q.pendingReviews(state(), Date.now()).slice(-1)[0] || today())); };
   document.getElementById('refresh').onclick = function () { if (document.activeElement) document.activeElement.blur(); render(); };

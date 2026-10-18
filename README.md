@@ -103,6 +103,8 @@ HUD / panel → QWebChannel commands → StateService → QJSEngine / shared red
 
 Native changes are named commands, not whole-state replacements. The service applies a command to a candidate state, saves atomically, then publishes it. Failed commands/saves preserve the prior state. Recent request IDs prevent duplicate retries. A native scheduler expires sessions even when pages are hidden. UI updates preserve open editors and unsaved settings.
 
+Control-panel editors prevent duplicate submissions while a save is pending. Delayed replies belong to their original editor and cannot close a newer draft or replace a newer snapshot. Editing linked records preserves archived relationships; archived options appear only when already selected. Long editors scroll internally with Save/Cancel visible, and menu/filter changes preserve clicks, keyboard navigation and same-view scroll positions.
+
 ## Data, backups, and upgrades
 
 Everything personal lives in `data/quests.json`. Local JSON is **not encrypted**; protect the Windows account and backup location. The whole `data/` directory is git-ignored. Never commit task data, screenshots containing real tasks, or exports to the public repository.
@@ -119,11 +121,12 @@ Settings → Backup exports all planning/tracking data. Import replace/merge mak
 
 ```bat
 node tests/check_syntax.cjs
-node --test tests/core.test.cjs
+node --test tests/core.test.cjs tests/ui.test.cjs
 .venv\Scripts\python.exe -B -m unittest discover -s tests -p "test_*.py" -v
 .venv\Scripts\python.exe -B tests/smoke_windows.py
 .venv\Scripts\python.exe -B tests/smoke_displays.py
 .venv\Scripts\python.exe -B tests/smoke_accountability.py
+.venv\Scripts\python.exe -B tests/smoke_panel.py
 ```
 
 The smoke test opens the actual Qt windows using synthetic data under `data/ui-smoke/`, captures screenshots there, and checks QWebChannel synchronization, Persian text, editor preservation, session expiration, planner/journal rendering, routine creation and review drafts. It needs an interactive Windows desktop; CI runs syntax/model/native-service tests. Native tests use isolated data and test startup shortcuts only inside a temporary test folder.
@@ -131,6 +134,8 @@ The smoke test opens the actual Qt windows using synthetic data under `data/ui-s
 The display smoke test repeatedly transfers an isolated HUD between the connected monitors, tests delayed DPI-inflation recovery, resizing persistence, all eight handles, folding, tray recovery, and quit shortcuts. It records synthetic screenshots and geometry under `data/display-smoke/`. Two differently scaled monitors are needed to exercise a real DPI transition; with one monitor, geometry/unit and simulated-inflation cases still run.
 
 The accountability smoke test covers conditional recurrence controls, optional rest-day routines/logging, direct day-off removal, reminder settings, real native popup buttons, editor preservation and the Windows sound playback API. Screenshots use synthetic data under `data/accountability-smoke/`. Repeat/snooze/resume timings use injected clocks; these are not physical suspend/reboot or speaker-audibility tests. Use **Test alert** to check sound on your current audio device.
+
+The panel smoke test uses synthetic data under `data/panel-ui-smoke/`. It injects delayed replies, double submits and background changes, exercises repeated task/goal/project editor navigation, archived links and completed-task allocations, and checks real Qt mouse/keyboard filter interactions, small-window layouts and scroll preservation. `tests/ui.test.cjs` covers out-of-order snapshots, form ownership, duplicate-submit protection and recovery after failed saves in CI.
 
 For an isolated manual installation:
 
