@@ -1,95 +1,66 @@
-# CLAUDE.md
+# Contributor and AI-agent context
 
-Guidance for AI assistants and contributors working in this repo.
-
-## What this is
-
-Quest HUD: a Windows desktop app — a translucent always-on-top RPG task
-overlay plus a control-panel window. It's a small [PySide6](https://pypi.org/project/PySide6/)
-shell hosting two HTML/JS pages that share one JSON data file.
-
-There is **no build step** and **no frontend framework**. Edit the files
-directly. The only runtime dependency is PySide6.
+QuestHUD is a local Windows planner with a compact RPG HUD and a full panel. Keep this one context file; do not add duplicate assistant-specific instruction files.
 
 ## Architecture
 
+- `quest-core.js`: shared formatting/rewards/legacy defaults.
+- `planner-core.js`: pure v4 domain model. `QC.apply(state, {type,payload,requestId?}, now)` returns a new candidate or throws. Never mutate canonical state from a page.
+- `state_service.py`: single owner of canonical state inside QJSEngine, atomic JSON persistence, migration/import backups, scheduler helpers and startup integration.
+- `board_reminder.py`: injected-clock native reminder state machine; transient alerts/snoozes are never replayed after launch/resume. `board_alert.py` owns the non-modal popup and bundled Windows sound, not domain state.
+- `hud.py`: native windows/tray, QWebChannel, one-second maintenance tick, single-instance guard and graceful quit.
+- `window_geometry.py`: logical-pixel work-area fitting, real-screen selection and eight-edge resize regions. Never multiply QWidget geometry by DPR; preserve the user-selected logical size across `WM_DPICHANGED`/screen events. Use system move/resize and coalesce deferred native geometry changes.
+- `panel.js` / `hud-ui.js` render snapshots; `ui-common.js` provides command-based dialogs. Both load core scripts in order. `panel.css` is shared only by the panel; preserve HUD transparency.
+
+Bridge interface: `load()` returns JSON; `dispatch(commandJson)` returns `{ok,state,error?}`; `dataChanged` prompts reload. `openView(route)`/`navigate` route reviews. Pages cannot call an unrestricted save method. Export reads canonical state. Web previews use the same reducer with localStorage and lack native scheduling.
+
+`testBoardReminder()` previews native UI without saving. Board configuration lives in `settings.boardReminder` (enabled/mode/time/intervalMinutes/days/windowStart/windowEnd/anchor); settings changes re-anchor intervals, unrelated saves do not. `routine.addOccurrence {routineId,day}` explicitly reuses/restores one active/paused occurrence. `dayOff.clear {start,end}` subtracts dates from all overlapping periods; keep identities/labels on remaining fragments. `task.complete` accepts a validated matching routine occurrence date; actual timestamps remain intact.
+
+## Invariants
+
+- Status never starts a timer. Sessions, tasks, allocations, reviews, and dated routine occurrences have separate identities.
+- All timer work is bounded. Expiration is idempotent and never completes a task. Explicit extension starts at confirmation, excluding the gap.
+- Multiple timers are legitimate. Summed effort and unique range-union time differ. Duration-only manual and legacy time never enter unique-time totals.
+- Dates use a configurable local tracking-day boundary (default 04:00). Calendar arithmetic must handle month/year boundaries. Manual duration-only days stay explicit.
+- A routine date is unique per template; old unfinished dates cannot block newer dates. Pausing/archiving never destroys recorded history.
+- Planned time off suppresses routine generation/review prompts and is neutral in routine statistics. Actual work/deadlines remain.
+- Board reminders run on days off; their local calendar schedule is independent of tracking-day boundaries. One native alert, ten-minute repeat/snooze, no missed-alert catch-up. Never change system volume.
+- Explicit manual routine occurrences survive day-off suppression. Clearing time off restores eligible active occurrences through today, never resumes paused/archived routines, and never duplicates allocations/rewards. Keep days off neutral in capacity warnings.
+- Hide and disable irrelevant recurrence controls; validate only the chosen repeat pattern and preserve editor input across changes. Use explicit Monday-Friday wording rather than inferring local weekends.
+- Completion rewards apply once. Session/manual corrections update totals without re-awarding XP/gold.
+- Failed commands and failed writes must preserve memory and disk. Validate imported records before replacing state. Reject unsupported newer formats.
+- Before a schema migration/import, make a byte-exact local backup. Never silently replace an invalid file with defaults.
+- Preserve stable `uid` identities across exports/merges, remap numeric references, and deduplicate completion rewards.
+- Preserve originals for suspicious legacy durations and corrected timer records. Do not invent historical ranges.
+- A background signal must not wipe typed fields, settings, open dialogs or focus. Review drafts save as the user types.
+
+## Conventions and safety
+
+Vanilla JavaScript, no build step/framework/server/CDN/telemetry. Code must execute in Node, Chromium and QJSEngine. Use injected timestamps for domain tests. New mutations belong in the reducer. Keep UI strings sentence-case, dark styling, accent near `#6e8efb`, readable Persian with `dir="auto"`, labelled form inputs and keyboard focus states.
+
+All personal data, backups, local screenshots and browser profiles remain under ignored `data/`. Never publish them. Tests use synthetic fixtures. `QUESTHUD_DATA_DIR` isolates manual tests and disables startup integration. Native service tests must not modify the real startup folder; use the helper's temporary-folder override.
+
+Do not run old application instances against migrated data. Stop them after a safety backup before the first live upgrade. Startup belongs to this installation's named shortcut; do not change unrelated startup entries. Silent background launches use hidden windows.
+
+## Commands and definition of done
+
+Run from the repository root:
+
+```bat
+node tests/check_syntax.cjs
+node --test tests/core.test.cjs
+.venv\Scripts\python.exe -B -m unittest discover -s tests -p "test_*.py" -v
+.venv\Scripts\python.exe -B tests/smoke_windows.py
+.venv\Scripts\python.exe -B tests/smoke_displays.py
+.venv\Scripts\python.exe -B tests/smoke_accountability.py
 ```
-quest-core.js  ──  shared data model + storage layer (the brain)
-     ▲    ▲
-     │    └──────── panel.html   (control-panel UI)
-     └───────────── hud.html     (overlay UI)
 
-hud.py  ──  PySide6 launcher: two QWebEngineView windows + a Bridge (QWebChannel)
-            that owns data/quests.json. Emits dataChanged so windows stay in sync.
-```
+Install via `run.bat` (Python 3.10–3.14, pinned PySide6). The smoke test needs an interactive Windows desktop and opens real Qt windows. CI covers the first three commands on Windows. Inspect captured synthetic screenshots for layout quality; passing DOM assertions alone does not prove visual quality.
 
-**Single source of truth:** `data/quests.json`. Both UIs read/write it through
-the `Bridge` exposed over `QWebChannel`. When one window saves, `Bridge.save()`
-emits `dataChanged`; both pages listen and reload (with a ~600 ms self-save
-debounce to avoid loops). In a plain browser (no bridge), `quest-core.js` falls
-back to `localStorage` — used only for preview.
+Display regressions must test mixed-DPI transfers, legacy/off-screen geometry recovery, chosen-size persistence, close-button visibility and all edges/corners. Do not change OS display scale settings for tests. The tool-window HUD intentionally stays out of the taskbar; retain tray and keyboard recovery/quit paths.
 
-## Key files
+Update README when features, requirements, state behavior, commands, backup or operation change. Meaningful model changes need boundary/failure tests. Verify migration preserves personal history/rewards and export/import round trips. Report actual Windows/notification/startup verification separately from simulations, and never claim a real reboot test from a simulated clock test.
 
-| File | Role |
-|------|------|
-| `quest-core.js` | All data logic: model, difficulties/rewards, **categories, urgency/deadlines, status lanes**, XP/level, achievements, recurring rollover, stats, and `makeStore()` (bridge-or-localStorage). Exposed as `window.QC`. |
-| `hud.html` | Overlay UI. Header + bars + a **paged quest list** (lenses: Focus / Today / Backlog / Done, with an optional category filter) + add box + compact stats + achievements. Cards show urgency colour + due chip + category, with an inline ⋯ editor. Settings (⚙): transparency, opacity, **HUD size (zoom)**, open panel. |
-| `panel.html` | Control panel. Tabs: Quests, **Board**, Recurring, History, Stats, Backup. The Board is a kanban-style view with a **Group by: Status / Category / Deadline** switch and native HTML5 drag-drop; category management lives there too. Charts are plain `<canvas>` (no CDN). |
-| `hud.py` | `Bridge` (QObject with `load/save/exportData/importData/setWindowOpacity/setZoom/openPanel` + signals), `HUD` (frameless translucent always-on-top, with a `QSizeGrip` for resize), `Panel` (normal resizable window), tray menu, geometry persistence. |
-| `run.bat` / `start-hud.vbs` / `install-startup.bat` | Setup, silent launch, autostart. |
+Board-reminder additions keep v4 compatibility and create a pre-board-reminders backup for older v4 saves. Import merge preserves local settings; replace restores settings but never pending alerts. Smoke timings are simulated; a successful Windows sound call is not proof that the user heard it.
 
-## State shape
-
-```js
-{
-  version, level, xp, xpMax, gold, goldEarned, totalMs, nextId,
-  categories:[{ id, name, color }],
-  quests:    [{ id, title, obj, diff, status:"active"|"backlog", cat:<catId|null>,
-               due:<ts|null>, pinned:bool, started, gold?, xp?, fromRecurring? }],
-  recurring: [{ id, title, obj, diff, repeat:"daily"|"weekdays"|"weekly", weekday,
-               cat?, dueOffset?, lastDate }],
-  completed: [{ title, ms, at, gold, xp, cat }],
-  ach:       { first, five, gold500, deep, lvl5 },
-  ui:        { translucent, opacity, hudScale }
-}
-```
-
-- Rewards default from `QC.DIFF[diff]`; per-quest `gold`/`xp` are optional overrides.
-- **Difficulty ≠ urgency.** Difficulty drives rewards; urgency is a *derived*
-  value (`QC.urgency(q)` → `emergency`/`high`/`normal`) from the deadline plus the
-  manual `pinned` flag — never stored. `QC.urgencyColor`, `QC.fmtDue`,
-  `QC.dueDaysLeft`, and the `QC.byHeat(now)` sort comparator support it.
-- Categories are a managed list (`QC.addCategory/editCategory/removeCategory`,
-  `QC.catById`); deleting one nulls `cat` on its quests.
-- `status` moves via `QC.setStatus(state,id,"backlog"|"active"|"doing")` ("doing"
-  also starts the timer); the panel Board drag-drop calls this.
-- `QC.normalize()` heals/migrates any loaded object (adds categories + the new
-  per-quest fields to old saves) — always run loaded JSON through it.
-- `QC.rollover(state)` spawns due recurring quests; safe to call repeatedly (it
-  won't duplicate a template that already has an active instance today).
-
-## Conventions
-
-- Mutations live in `quest-core.js` and operate on a passed `state`; the **caller saves** (`store.save(JSON.stringify(state))`) and re-renders.
-- Keep UI text sentence-case; keep the minimal/clean aesthetic (accent `#6e8efb`, dark translucent panels).
-- Vanilla ES5-ish JS (no modules/bundler) so files load directly via `file://` and `qrc://`.
-- Don't introduce a server, external CDNs, or telemetry. Charts stay canvas-based.
-- **Manual entry only** — app sync (Todoist/Notion/etc.) is intentionally out of scope unless explicitly requested.
-
-## Running & testing
-
-- Run on Windows via `run.bat` (creates `.venv`, installs PySide6, launches).
-- JS syntax: `node --check quest-core.js` and extract+check the inline `<script>` of each HTML file.
-- Core logic can be exercised in Node by shimming `global.window = global`,
-  `eval`-ing `quest-core.js`, then calling `window.QC` functions (no DOM needed
-  for the model functions).
-- Qt runtime behavior (transparency, the QWebChannel handshake, tray) can only
-  be verified on an actual Windows machine.
-
-## Gotchas
-
-- **QWebEngine transparency** needs all of: window `WA_TranslucentBackground`, frameless flag, `page().setBackgroundColor(Qt.transparent)`, and transparent CSS `body`. The `--enable-transparent-visuals` chromium flag is set before the WebEngine import. Some GPUs still render opaque on first run.
-- **QWebChannel** requires `<script src="qrc:///qtwebchannel/qwebchannel.js">` to load before `quest-core.js`. The channel must be set on the page (`page.setWebChannel`) before `page.load()`.
-- **Two windows share one `QWebEngineProfile`** — keep a Python reference to the profile and bridge for the app's lifetime (held in `app._questhud`).
-- **Truncation watch:** when regenerating `panel.html`/`hud.html`, confirm the file ends with `</script></body></html>` and that `grep -c "</script>"` matches the number of script tags — a past write got cut off mid-file.
+Known boundaries: no cloud/external calendar sync; local JSON is unencrypted; notification display depends on Windows; daily reviews catch up at launch/login, board alerts skip missed slots; backup retention is manual. Changing the boundary regroups ranged history. Planning capacity is unset until the user supplies availability.

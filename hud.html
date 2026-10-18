@@ -49,7 +49,7 @@
   .toggle::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;
     background:#fff;transition:.15s;}
   .toggle.on::after{left:20px;}
-  input[type=range]{flex:1;accent-color:var(--accent);}
+  input[type=range]{min-width:0;flex:1;accent-color:var(--accent);}
   .linkbtn{border:1px solid var(--accent);color:var(--accent);background:transparent;border-radius:8px;
     padding:6px 10px;font-size:12px;font-family:inherit;cursor:pointer;width:100%;}
   .linkbtn:hover{background:var(--bg-slab-hi);}
@@ -164,6 +164,24 @@
     border:1px solid var(--accent);color:var(--accent);font-weight:600;letter-spacing:.5px;padding:7px 16px;border-radius:10px;
     opacity:0;pointer-events:none;transition:.3s;z-index:50;font-size:13px;}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  .pending-review{font-size:11px;color:#efb477;border:1px solid #766447;border-radius:7px;padding:5px;cursor:pointer;background:transparent;}
+  dialog{background:#191c27;color:#ededf2;border:1px solid #6476a8;border-radius:12px;padding:16px;width:calc(100vw - 18px);max-height:95vh;}
+  dialog::backdrop{background:#080b14aa}dialog h2{font-size:15px;margin:0}dialog header,dialog footer,.row{display:flex;gap:6px;flex-wrap:wrap;justify-content:space-between;margin-bottom:12px}dialog footer{margin:12px 0 0}dialog label{display:flex;flex-direction:column;gap:5px;margin:10px 0;font-size:12px}dialog input,dialog select,dialog textarea{background:#10131c;border:1px solid #4a536f;border-radius:6px;color:white;padding:6px;max-width:100%;width:100%;font:inherit}dialog button{background:#29324b;color:white;border:1px solid #6476a8;border-radius:6px;padding:5px;cursor:pointer;font:inherit}dialog textarea{min-height:60px}#form-error{color:#ffaaaa}#notice{position:fixed;bottom:10px;left:10px;right:10px;background:#29324b;border:1px solid #8ca4ff;padding:9px;border-radius:7px;z-index:99;font-size:12px}.session{font-size:11px;border-top:1px solid #444;padding:8px 0}.session p{margin:4px 0}.session button{font-size:10px;padding:3px}.session .actions{display:flex;gap:4px;flex-wrap:wrap}.pill{font-size:9px;margin-left:6px;color:#aab8dd}.warning{color:#efb477}.q-title,.q-obj{unicode-bidi:plaintext}button:focus-visible,input:focus-visible{outline:2px solid #8ca4ff}
+
+  .collapsible{display:flex;flex-direction:column;gap:8px;flex:1;min-height:0;overflow:hidden;}
+  .panel{min-width:0;min-height:0;gap:8px;padding:9px 10px;}
+  .head,.bars,.pager,.add{flex-shrink:0;}
+  .scroll.quests{min-height:0;overflow-x:hidden;}
+  .quest,.q-meta,.q-top{min-width:0;}.q-title,.q-obj{overflow-wrap:anywhere;}
+  .q-obj{margin:0;}.add input{min-width:0;}
+  .collapsed .collapsible{display:none;}
+  dialog{max-width:calc(100vw - 12px);max-height:calc(100vh - 12px);overflow:auto;margin:auto;}
+  dialog header{position:sticky;top:-16px;background:#191c27;padding:8px 0;z-index:1;}
+  dialog footer{position:sticky;bottom:-16px;background:#191c27;padding:8px 0;z-index:1;}
+  dialog input,dialog textarea{user-select:text;}
+  @media(max-height:480px){.collapsible>div:has(.ach),.collapsible>div:has(.stats){display:none;}}
+  @media(max-height:350px){.who .sub{font-size:10px;}.avatar{width:30px;height:30px;}.panel{gap:5px;}}
 </style>
 </head>
 <body>
@@ -187,12 +205,12 @@
       <button class="linkbtn" id="openPanelBtn">Open control panel ↗</button>
     </div>
 
-    <div class="bars">
+    <button id="pendingReview" class="pending-review" hidden></button><div class="bars">
       <div class="bar-row"><span class="bar-label">XP</span><div class="bar"><span id="xpfill" style="width:0%"></span></div><span class="bar-val" id="xpval">0 / 100</span></div>
       <div class="gold-line"><span>◉</span><span class="g" id="gold">0</span><span>gold</span></div>
     </div>
 
-    <div class="collapsible" style="display:flex;flex-direction:column;gap:9px;flex:1;min-height:0;">
+    <div class="collapsible">
       <div class="pager">
         <button class="arrow" id="prevLens" title="Previous">‹</button>
         <div class="lens"><span class="nm" id="lensName">Focus</span><span class="ct" id="lensCount">0</span></div>
@@ -222,254 +240,4 @@
   <div class="toast" id="toast">LEVEL UP</div>
 
 <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
-<script src="quest-core.js"></script>
-<script>
-(function(){
-  "use strict";
-  var $ = function(id){ return document.getElementById(id); };
-  var state = QC.defaultState(), store = null, lastSelfSave = 0;
-  var LENSES = [
-    { key:"focus",   name:"Focus" },
-    { key:"today",   name:"Today" },
-    { key:"backlog", name:"Backlog" },
-    { key:"done",    name:"Done" }
-  ];
-  var lens = 0, filterCat = null, editId = null, filterOpen = false;
-
-  function save(){ lastSelfSave = Date.now(); if(store) store.save(JSON.stringify(state)); }
-  function reload(cb){
-    if(!store){ cb && cb(); return; }
-    store.load(function(str){
-      try{ state = QC.normalize(str ? JSON.parse(str) : null); }catch(e){ state = QC.defaultState(); }
-      cb && cb();
-    });
-  }
-
-  function applyUi(){
-    var t = state.ui && state.ui.translucent !== false;
-    $("panel").classList.toggle("solid", !t);
-    $("solidToggle").classList.toggle("on", !t);
-    var op = (state.ui && state.ui.opacity) ? state.ui.opacity : 1.0;
-    $("opacity").value = Math.round(op*100); $("opval").textContent = Math.round(op*100)+"%";
-    if(store) store.setOpacity(op);
-    var sc = (state.ui && state.ui.hudScale) ? state.ui.hudScale : 1.0;
-    $("scale").value = Math.round(sc*100); $("scaleval").textContent = Math.round(sc*100)+"%";
-    if(store) store.setZoom(sc);
-  }
-
-  function toast(m){ var t=$("toast"); t.textContent=m; t.classList.add("show"); setTimeout(function(){t.classList.remove("show");},1700); }
-
-  /* ---------- lens data ---------- */
-  function passCat(catId){ return filterCat == null || catId === filterCat; }
-  function lensQuests(){
-    var key = LENSES[lens].key, now = Date.now();
-    var list = state.quests.filter(function(q){
-      if(!passCat(q.cat)) return false;
-      if(key==="focus")   return q.status==="active";
-      if(key==="backlog") return q.status==="backlog";
-      if(key==="today"){ var d=QC.dueDaysLeft(q.due, now); return q.pinned || (d!=null && d<=0); }
-      return false;
-    });
-    list.sort(QC.byHeat(now));
-    return list;
-  }
-
-  /* ---------- card ---------- */
-  function catOptions(sel){
-    var html = '<option value="">No category</option>';
-    state.categories.forEach(function(c){
-      html += '<option value="'+c.id+'"'+(c.id===sel?' selected':'')+'>'+QC.esc(c.name)+'</option>';
-    });
-    return html;
-  }
-  function toDateInput(ts){
-    if(ts==null) return "";
-    var d=new Date(ts);
-    return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2);
-  }
-  function questCard(q){
-    var u = QC.urgency(q), uc = QC.URGENCY[u].color, r = QC.reward(q);
-    var cat = QC.catById(state, q.cat);
-    var dueTxt = QC.fmtDue(q.due);
-    var dueChip = dueTxt ? '<span class="due-chip" style="color:'+uc+';background:'+uc+'22;">'+dueTxt+'</span>'
-                         : (q.pinned ? '<span class="due-chip" style="color:'+uc+';background:'+uc+'22;">!</span>' : '');
-    var timer = q.started ? '<span class="timer" data-start="'+q.started+'">0s</span>' : '';
-    var action;
-    if(q.status==="backlog") action = '<button class="qbtn act" data-activate="'+q.id+'">→ Activate</button>';
-    else if(q.started)       action = '<button class="qbtn done" data-done="'+q.id+'">✓ Done</button>';
-    else                     action = '<button class="qbtn start" data-go="'+q.id+'">▸ Start</button>';
-    var catTag = cat ? '<span class="cat"><span class="cat-dot" style="background:'+cat.color+'"></span>'+QC.esc(cat.name)+'</span>' : '';
-    var open = (editId===q.id);
-
-    var edit =
-      '<div class="q-edit'+(open?' open':'')+'" data-editbox="'+q.id+'">'+
-        '<div class="erow"><label>Category</label>'+
-          '<select data-ef="cat" data-id="'+q.id+'">'+catOptions(q.cat)+'</select>'+
-          '<button class="chipbtn pin'+(q.pinned?' on':'')+'" data-pin="'+q.id+'">⚑ Emergency</button>'+
-        '</div>'+
-        '<div class="erow"><label>Due</label>'+
-          '<button class="chipbtn" data-due="1" data-id="'+q.id+'">+1d</button>'+
-          '<button class="chipbtn" data-due="3" data-id="'+q.id+'">+3d</button>'+
-          '<button class="chipbtn" data-due="7" data-id="'+q.id+'">+7d</button>'+
-          '<input type="date" data-ef="duedate" data-id="'+q.id+'" value="'+toDateInput(q.due)+'">'+
-          (q.due!=null?'<button class="chipbtn" data-due="clear" data-id="'+q.id+'">clear</button>':'')+
-        '</div>'+
-        '<div class="erow">'+
-          (q.status==="backlog"
-            ? '<button class="chipbtn" data-mv="active" data-id="'+q.id+'">↑ Make active</button>'
-            : '<button class="chipbtn" data-mv="backlog" data-id="'+q.id+'">↓ To backlog</button>')+
-          '<span class="q-spacer"></span>'+
-          '<button class="chipbtn danger" data-del="'+q.id+'">✕ Delete</button>'+
-        '</div>'+
-      '</div>';
-
-    return '<div class="quest'+(q.started?' active':'')+'" style="--u:'+uc+'">'+
-        '<div class="q-top"><span class="q-title">'+QC.esc(q.title)+'</span>'+dueChip+'</div>'+
-        (q.obj?'<div class="q-obj">'+QC.esc(q.obj)+'</div>':'')+
-        '<div class="q-meta"><span class="reward">+'+r.gold+'g · <span class="xp-tag">+'+r.xp+'xp</span></span>'+
-          catTag+'<span class="q-spacer"></span>'+timer+action+
-          '<button class="more'+(open?' on':'')+'" data-more="'+q.id+'" title="Edit">⋯</button></div>'+
-        edit+
-      '</div>';
-  }
-
-  function render(){
-    $("lvl").textContent = state.level;
-    $("gold").textContent = state.gold.toLocaleString();
-    $("xpval").textContent = state.xp + " / " + state.xpMax;
-    $("xpfill").style.width = Math.min(100, Math.round(state.xp/state.xpMax*100)) + "%";
-
-    if(filterCat != null && !QC.catById(state, filterCat)) filterCat = null;
-
-    $("lensName").textContent = LENSES[lens].name;
-    var dots = ""; LENSES.forEach(function(_,i){ dots += '<span class="'+(i===lens?"on":"")+'"></span>'; });
-    $("lensDots").innerHTML = dots;
-    $("filterBtn").classList.toggle("on", filterCat!=null);
-
-    var cf = $("catFilter"); cf.classList.toggle("open", filterOpen);
-    if(filterOpen){
-      var chips = '<span class="catchip'+(filterCat==null?' on':'')+'" data-cat="">All</span>';
-      state.categories.forEach(function(c){
-        chips += '<span class="catchip'+(filterCat===c.id?' on':'')+'" data-cat="'+c.id+'">'+
-                 '<span class="cd" style="background:'+c.color+'"></span>'+QC.esc(c.name)+'</span>';
-      });
-      cf.innerHTML = chips;
-    }
-
-    var ql = $("questList"); ql.innerHTML = "";
-    if(LENSES[lens].key==="done"){
-      var done = state.completed.filter(function(c){ return passCat(c.cat); });
-      $("lensCount").textContent = done.length;
-      if(done.length===0){ ql.innerHTML = '<div class="empty">No quests completed yet.</div>'; }
-      done.slice(0,40).forEach(function(c){
-        var el=document.createElement("div"); el.className="logitem";
-        el.innerHTML='<span class="chk">✓</span><span class="lt">'+QC.esc(c.title)+'</span><span class="ld">'+QC.fmtDur(c.ms)+'</span><span class="lw">'+QC.fmtWhen(c.at)+'</span>';
-        ql.appendChild(el);
-      });
-    } else {
-      var list = lensQuests();
-      $("lensCount").textContent = list.length;
-      if(list.length===0){
-        ql.innerHTML = '<div class="empty">'+(LENSES[lens].key==="today"?"Nothing due today. Nice.":(LENSES[lens].key==="backlog"?"Backlog is empty.":"No active quests."))+'</div>';
-      }
-      list.forEach(function(q){ ql.insertAdjacentHTML("beforeend", questCard(q)); });
-    }
-
-    $("s-done").textContent = state.completed.length;
-    $("s-time").textContent = state.totalMs ? QC.fmtDur(state.totalMs) : "0m";
-
-    var al=$("achList"); al.innerHTML="";
-    QC.ACHS.forEach(function(a){
-      var on=state.ach[a.key], el=document.createElement("div");
-      el.className="badge"+(on?" on":"");
-      el.innerHTML=(on?a.icon:"<span style='opacity:.45'>•</span>")+'<span class="tip">'+QC.esc(a.name)+(on?"":" (locked)")+'</span>';
-      al.appendChild(el);
-    });
-  }
-
-  setInterval(function(){
-    document.querySelectorAll(".timer[data-start]").forEach(function(el){
-      el.textContent=QC.fmtDur(Date.now()-parseInt(el.getAttribute("data-start"),10));
-    });
-  },1000);
-  /* recurring rollover + due-date colour refresh (also covers passing midnight).
-     skip the re-render while an inline editor is open so we don't yank focus. */
-  setInterval(function(){ var ch=QC.rollover(state); if(ch) save(); if(ch || editId===null) render(); }, 60000);
-
-  /* ---------- events ---------- */
-  $("prevLens").addEventListener("click",function(){ lens=(lens-1+LENSES.length)%LENSES.length; editId=null; render(); });
-  $("nextLens").addEventListener("click",function(){ lens=(lens+1)%LENSES.length; editId=null; render(); });
-  $("filterBtn").addEventListener("click",function(){ filterOpen=!filterOpen; render(); });
-  $("catFilter").addEventListener("click",function(e){
-    var c=e.target.closest("[data-cat]"); if(!c) return;
-    var v=c.getAttribute("data-cat"); filterCat = v==="" ? null : +v; render();
-  });
-
-  $("questList").addEventListener("click",function(e){
-    var el;
-    if((el=e.target.closest("[data-go]")))        { QC.startQuest(state,+el.getAttribute("data-go")); save(); render(); }
-    else if((el=e.target.closest("[data-done]")))  { var ups=QC.completeQuest(state,+el.getAttribute("data-done")); ups.forEach(function(L){ toast("LEVEL "+L); }); editId=null; save(); render(); }
-    else if((el=e.target.closest("[data-activate]"))){ QC.setStatus(state,+el.getAttribute("data-activate"),"active"); save(); render(); }
-    else if((el=e.target.closest("[data-more]")))  { var id=+el.getAttribute("data-more"); editId = (editId===id?null:id); render(); }
-    else if((el=e.target.closest("[data-pin]")))   { var i=+el.getAttribute("data-pin"); var q=state.quests.find(function(x){return x.id===i;}); if(q){ QC.editQuest(state,i,{pinned:!q.pinned}); save(); render(); } }
-    else if((el=e.target.closest("[data-mv]")))    { QC.setStatus(state,+el.getAttribute("data-id"),el.getAttribute("data-mv")); save(); render(); }
-    else if((el=e.target.closest("[data-del]")))   { QC.removeQuest(state,+el.getAttribute("data-del")); editId=null; save(); render(); }
-    else if((el=e.target.closest("[data-due]")))   {
-      var id2=+el.getAttribute("data-id"), v=el.getAttribute("data-due");
-      var due = v==="clear" ? null : (QC.startOfDay(Date.now()) + (+v)*86400000);
-      QC.editQuest(state,id2,{due:due}); save(); render();
-    }
-  });
-  $("questList").addEventListener("change",function(e){
-    var el=e.target, ef=el.getAttribute("data-ef"); if(!ef) return;
-    var id=+el.getAttribute("data-id");
-    if(ef==="cat"){ QC.editQuest(state,id,{cat: el.value==="" ? null : +el.value}); save(); render(); }
-    else if(ef==="duedate"){
-      var due=null;
-      if(el.value){ var p=el.value.split("-"); due=new Date(+p[0],+p[1]-1,+p[2]).getTime(); }
-      QC.editQuest(state,id,{due:due}); save(); render();
-    }
-  });
-
-  function doAdd(){
-    var v=$("addInput").value.trim(); if(!v) return;
-    var key=LENSES[lens].key, fields={ title:v, obj:"" };
-    if(key==="backlog") fields.status="backlog";
-    if(key==="today") fields.due = QC.startOfDay(Date.now());
-    if(filterCat!=null) fields.cat = filterCat;
-    QC.addQuest(state, fields); $("addInput").value=""; save(); render();
-  }
-  $("addBtn").addEventListener("click", doAdd);
-  $("addInput").addEventListener("keydown",function(e){ if(e.key==="Enter") doAdd(); });
-  $("collapseBtn").addEventListener("click",function(){ var p=$("panel"); p.classList.toggle("collapsed"); this.textContent=p.classList.contains("collapsed")?"▸":"▾"; });
-  $("gearBtn").addEventListener("click",function(){ $("settings").classList.toggle("open"); });
-  $("openPanelBtn").addEventListener("click",function(){ if(store) store.openPanel(); });
-  $("solidToggle").addEventListener("click",function(){
-    var cur = state.ui.translucent !== false;
-    state.ui.translucent = !cur;
-    applyUi(); save();
-  });
-  $("opacity").addEventListener("input",function(){
-    var op=this.value/100; $("opval").textContent=this.value+"%"; state.ui.opacity=op;
-    if(store) store.setOpacity(op);
-  });
-  $("opacity").addEventListener("change", save);
-  $("scale").addEventListener("input",function(){
-    var sc=this.value/100; $("scaleval").textContent=this.value+"%"; state.ui.hudScale=sc;
-    if(store) store.setZoom(sc);
-  });
-  $("scale").addEventListener("change", save);
-
-  /* boot */
-  QC.makeStore(function(s){
-    store = s;
-    reload(function(){
-      if(QC.rollover(state)) save();
-      applyUi(); render();
-      store.onChange(function(){ if(Date.now()-lastSelfSave < 600) return; reload(function(){ applyUi(); render(); }); });
-    });
-  });
-})();
-</script>
-</body>
-</html>
+<script src="quest-core.js"></script><script src="planner-core.js"></script><script src="ui-common.js"></script><script src="hud-ui.js"></script></body></html>
