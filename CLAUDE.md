@@ -7,11 +7,14 @@ QuestHUD is a local Windows planner with a compact RPG HUD and a full panel. Kee
 - `quest-core.js`: shared formatting/rewards/legacy defaults.
 - `planner-core.js`: pure v4 domain model. `QC.apply(state, {type,payload,requestId?}, now)` returns a new candidate or throws. Never mutate canonical state from a page.
 - `state_service.py`: single owner of canonical state inside QJSEngine, atomic JSON persistence, migration/import backups, scheduler helpers and startup integration.
+- `board_reminder.py`: injected-clock native reminder state machine; transient alerts/snoozes are never replayed after launch/resume. `board_alert.py` owns the non-modal popup and bundled Windows sound, not domain state.
 - `hud.py`: native windows/tray, QWebChannel, one-second maintenance tick, single-instance guard and graceful quit.
 - `window_geometry.py`: logical-pixel work-area fitting, real-screen selection and eight-edge resize regions. Never multiply QWidget geometry by DPR; preserve the user-selected logical size across `WM_DPICHANGED`/screen events. Use system move/resize and coalesce deferred native geometry changes.
 - `panel.js` / `hud-ui.js` render snapshots; `ui-common.js` provides command-based dialogs. Both load core scripts in order. `panel.css` is shared only by the panel; preserve HUD transparency.
 
 Bridge interface: `load()` returns JSON; `dispatch(commandJson)` returns `{ok,state,error?}`; `dataChanged` prompts reload. `openView(route)`/`navigate` route reviews. Pages cannot call an unrestricted save method. Export reads canonical state. Web previews use the same reducer with localStorage and lack native scheduling.
+
+`testBoardReminder()` previews native UI without saving. Board configuration lives in `settings.boardReminder` (enabled/mode/time/intervalMinutes/days/windowStart/windowEnd/anchor); settings changes re-anchor intervals, unrelated saves do not. `routine.addOccurrence {routineId,day}` explicitly reuses/restores one active/paused occurrence. `dayOff.clear {start,end}` subtracts dates from all overlapping periods; keep identities/labels on remaining fragments. `task.complete` accepts a validated matching routine occurrence date; actual timestamps remain intact.
 
 ## Invariants
 
@@ -21,6 +24,9 @@ Bridge interface: `load()` returns JSON; `dispatch(commandJson)` returns `{ok,st
 - Dates use a configurable local tracking-day boundary (default 04:00). Calendar arithmetic must handle month/year boundaries. Manual duration-only days stay explicit.
 - A routine date is unique per template; old unfinished dates cannot block newer dates. Pausing/archiving never destroys recorded history.
 - Planned time off suppresses routine generation/review prompts and is neutral in routine statistics. Actual work/deadlines remain.
+- Board reminders run on days off; their local calendar schedule is independent of tracking-day boundaries. One native alert, ten-minute repeat/snooze, no missed-alert catch-up. Never change system volume.
+- Explicit manual routine occurrences survive day-off suppression. Clearing time off restores eligible active occurrences through today, never resumes paused/archived routines, and never duplicates allocations/rewards. Keep days off neutral in capacity warnings.
+- Hide and disable irrelevant recurrence controls; validate only the chosen repeat pattern and preserve editor input across changes. Use explicit Monday-Friday wording rather than inferring local weekends.
 - Completion rewards apply once. Session/manual corrections update totals without re-awarding XP/gold.
 - Failed commands and failed writes must preserve memory and disk. Validate imported records before replacing state. Reject unsupported newer formats.
 - Before a schema migration/import, make a byte-exact local backup. Never silently replace an invalid file with defaults.
@@ -46,6 +52,7 @@ node --test tests/core.test.cjs
 .venv\Scripts\python.exe -B -m unittest discover -s tests -p "test_*.py" -v
 .venv\Scripts\python.exe -B tests/smoke_windows.py
 .venv\Scripts\python.exe -B tests/smoke_displays.py
+.venv\Scripts\python.exe -B tests/smoke_accountability.py
 ```
 
 Install via `run.bat` (Python 3.10–3.14, pinned PySide6). The smoke test needs an interactive Windows desktop and opens real Qt windows. CI covers the first three commands on Windows. Inspect captured synthetic screenshots for layout quality; passing DOM assertions alone does not prove visual quality.
@@ -54,4 +61,6 @@ Display regressions must test mixed-DPI transfers, legacy/off-screen geometry re
 
 Update README when features, requirements, state behavior, commands, backup or operation change. Meaningful model changes need boundary/failure tests. Verify migration preserves personal history/rewards and export/import round trips. Report actual Windows/notification/startup verification separately from simulations, and never claim a real reboot test from a simulated clock test.
 
-Known boundaries: no cloud/external calendar sync; local JSON is unencrypted; notification display depends on Windows; PC-off reminders occur at next launch/login; backup retention is manual. Changing the boundary regroups ranged history. Planning capacity is unset until the user supplies availability.
+Board-reminder additions keep v4 compatibility and create a pre-board-reminders backup for older v4 saves. Import merge preserves local settings; replace restores settings but never pending alerts. Smoke timings are simulated; a successful Windows sound call is not proof that the user heard it.
+
+Known boundaries: no cloud/external calendar sync; local JSON is unencrypted; notification display depends on Windows; daily reviews catch up at launch/login, board alerts skip missed slots; backup retention is manual. Changing the boundary regroups ranged history. Planning capacity is unset until the user supplies availability.

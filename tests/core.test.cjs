@@ -202,3 +202,98 @@ test('editing an allocation moves it instead of leaving a duplicate on the old d
   s = apply(s, 'allocation.save', {id, taskId, day:'2026-10-19', minutes:120});
   assert.equal(s.allocations.length,1); assert.equal(s.allocations[0].day,'2026-10-19'); assert.equal(s.allocations[0].minutes,120);
 });
+
+
+test('routine validation uses only the active pattern and requires whole interval days', () => {
+  let s = apply(fresh(), 'routine.save', {fields:{title:'Daily',repeat:'daily',every:'n/a',days:[],weekday:99}});
+  assert.equal(s.quests.length, 1);
+  assert.throws(() => apply(s, 'routine.save', {fields:{title:'Interval',repeat:'interval',every:1.5}}), /whole/);
+  assert.throws(() => apply(s, 'routine.save', {fields:{title:'Selected',repeat:'selected',days:[]}}), /weekday/);
+  assert.throws(() => apply(s, 'routine.save', {fields:{title:'Weekly',repeat:'weekly',weekday:1.5}}), /weekday/);
+});
+test('clearing a middle day splits every overlapping period and keeps labels', () => {
+  let s = apply(fresh(), 'dayOff.save', {start:'2026-10-18',end:'2026-10-22',label:'Rest'});
+  s = apply(s, 'dayOff.save', {start:'2026-10-19',end:'2026-10-21',label:'Travel'});
+  s = apply(s, 'dayOff.clear', {start:'2026-10-20',end:'2026-10-20'});
+  assert.equal(s.daysOff.length, 4); assert.equal(Q.isOff(s,'2026-10-20'), undefined);
+  assert.equal(Q.isOff(s,'2026-10-19').label, 'Rest'); assert.equal(Q.isOff(s,'2026-10-21').label, 'Rest');
+  assert.equal(s.daysOff.filter(d=>d.label==='Travel').length, 2);
+  const ids = s.daysOff.map(d=>d.uid);
+  s = apply(s, 'dayOff.clear', {start:'2026-10-20',end:'2026-10-20'});
+  assert.deepEqual(plain(s.daysOff.map(d=>d.uid)), plain(ids));
+});
+test('clearing range boundaries and whole periods leaves other dates untouched', () => {
+  for (const range of [['2026-10-18','2026-10-18'],['2026-10-22','2026-10-22'],['2026-10-17','2026-10-23']]) {
+    let s = apply(fresh(), 'dayOff.save', {start:'2026-10-18',end:'2026-10-22',label:'Rest'});
+    s = apply(s, 'dayOff.clear', {start:range[0],end:range[1]});
+    for(let i=18;i<=22;i++) {const day='2026-10-'+i; assert.equal(!!Q.isOff(s,day), !(range[0]<=day && day<=range[1]));}
+  }
+});
+test('clearing past days restores only due active routines through today without duplicates', () => {
+  let s = apply(fresh(), 'routine.save', {fields:{title:'Daily',repeat:'daily'}}), rid=s.recurring[0].id, original=s.quests[0].id;
+  s = apply(s, 'dayOff.save', {start:'2026-10-18',end:'2026-10-22'});
+  s = apply(s, 'tick', {}, t0+2*24*H);
+  s = apply(s, 'dayOff.clear', {start:'2026-10-18',end:'2026-10-22'}, t0+2*24*H);
+  assert.equal(s.quests.length,3); assert.equal(s.quests[0].id,original); assert.equal(s.quests[0].archived,false);
+  assert.equal(s.allocations.length,3); assert.equal(s.quests.filter(q=>q.occurrenceDay>'2026-10-20').length,0);
+  assert.equal(Q.projectedRoutines(s,'2026-10-22').length,1);
+  s = apply(s,'dayOff.clear',{start:'2026-10-18',end:'2026-10-22'},t0+2*24*H);
+  assert.equal(s.quests.length,3); assert.equal(s.allocations.length,3);
+  for(const status of ['paused','archived']) {
+    let p=apply(fresh(),'routine.save',{fields:{title:status,repeat:'daily'}});
+    p=apply(p,'dayOff.save',{start:'2026-10-18',end:'2026-10-18'});
+    p=apply(p,'routine.state',{id:p.recurring[0].id,state:status});
+    p=apply(p,'dayOff.clear',{start:'2026-10-18',end:'2026-10-18'});
+    assert.equal(p.recurring[0].state,status); assert.equal(Q.expected(p,'2026-10-18').length,0);
+  }
+});
+test('clearing a day re-enables review eligibility and preserves submitted reviews and work', () => {
+  let s = task(fresh()); const id=s.quests[0].id, evening=at('2026-10-18T23:30:00Z');
+  s=apply(s,'log.save',{taskId:id,day:'2026-10-18',minutes:12});
+  s=apply(s,'dayOff.save',{start:'2026-10-18',end:'2026-10-18'});
+  assert.equal(Q.pendingReviews(s,evening).length,0);
+  s=apply(s,'dayOff.clear',{start:'2026-10-18',end:'2026-10-18'},evening);
+  assert.deepEqual(plain(Q.pendingReviews(s,evening)),['2026-10-18']);
+  s=apply(s,'review.submit',{day:'2026-10-18',note:'Kept'},evening);
+  s=apply(s,'dayOff.save',{start:'2026-10-18',end:'2026-10-18'},evening);
+  s=apply(s,'dayOff.clear',{start:'2026-10-18',end:'2026-10-18'},evening);
+  assert.equal(s.reviews['2026-10-18'].note,'Kept'); assert.equal(Q.pendingReviews(s,evening).length,0);
+  assert.equal(Q.daySummary(s,'2026-10-18',evening).summedMs,12*MIN);
+});
+test('explicit day-off routines reuse suppressed occurrences and survive suppression', () => {
+  let s=apply(fresh(),'routine.save',{fields:{title:'Dailies',repeat:'daily',estimateMinutes:15}});
+  const rid=s.recurring[0].id, qid=s.quests[0].id;
+  s=apply(s,'dayOff.save',{start:'2026-10-18',end:'2026-10-18'});
+  for(let i=0;i<2;i++) s=apply(s,'routine.addOccurrence',{routineId:rid,day:'2026-10-18'});
+  assert.equal(s.quests.length,1); assert.equal(s.quests[0].id,qid); assert.equal(s.quests[0].archived,false);
+  assert.equal(s.allocations.length,1); assert.equal(s.quests[0].manualOccurrence,true);
+  s=apply(s,'dayOff.save',{start:'2026-10-18',end:'2026-10-18'});
+  assert.equal(s.quests[0].archived,false); assert.equal(Q.daySummary(s,'2026-10-18',t0).overCapacity,false);
+  s=apply(s,'log.save',{taskId:qid,day:'2026-10-18',minutes:10});
+  s=apply(s,'task.complete',{id:qid,day:'2026-10-18'}); const gold=s.gold;
+  s=apply(s,'task.complete',{id:qid,day:'2026-10-18'});
+  assert.equal(s.gold,gold); assert.equal(s.completed.length,1); assert.equal(Q.daySummary(s,'2026-10-18',t0).summedMs,10*MIN);
+});
+test('paused routines can be explicitly recorded retrospectively without resuming', () => {
+  let s=apply(fresh(),'routine.save',{fields:{title:'Paused',repeat:'daily'}}), rid=s.recurring[0].id;
+  s=apply(s,'routine.state',{id:rid,state:'paused'});
+  s=apply(s,'routine.addOccurrence',{routineId:rid,day:'2026-10-17'});
+  const q=last(s,'quests'); s=apply(s,'task.complete',{id:q.id});
+  assert.equal(last(s,'completed').day,'2026-10-17'); assert.equal(last(s,'completed').at,t0);
+  assert.equal(s.recurring[0].state,'paused');
+  s=apply(s,'routine.state',{id:rid,state:'archived'});
+  assert.throws(()=>apply(s,'routine.addOccurrence',{routineId:rid,day:'2026-10-19'}),/active or paused/);
+});
+test('board reminders default off; settings validate and preserve interval anchors', () => {
+  let s=fresh(); assert.equal(s.settings.boardReminder.enabled,false);
+  const b={enabled:true,mode:'interval',intervalMinutes:120,days:[0,1,2,3,4,5,6],windowStart:'22:00',windowEnd:'02:00'};
+  s=apply(s,'settings.save',{fields:{boardReminder:b}}); assert.equal(s.settings.boardReminder.anchor,t0);
+  s=apply(s,'settings.save',{fields:{boardReminder:b}},t0+H); assert.equal(s.settings.boardReminder.anchor,t0);
+  assert.equal(Q.normalize(s,t0+H).settings.boardReminder.anchor,t0);
+  s=apply(s,'settings.save',{fields:{boardReminder:{intervalMinutes:180}}},t0+H); assert.equal(s.settings.boardReminder.anchor,t0+H);
+  assert.throws(()=>apply(s,'settings.save',{fields:{boardReminder:{mode:'daily',time:''}}}),/time/);
+  assert.throws(()=>apply(s,'settings.save',{fields:{boardReminder:{days:[]}}}),/weekday/);
+  assert.throws(()=>apply(s,'settings.save',{fields:{boardReminder:{intervalMinutes:0}}}),/interval/);
+  assert.throws(()=>apply(s,'settings.save',{fields:{boardReminder:{windowEnd:'22:00'}}}),/start\/end/);
+  const restored=apply(fresh(),'import.replace',{data:s}); assert.deepEqual(plain(restored.settings.boardReminder),plain(s.settings.boardReminder));
+});

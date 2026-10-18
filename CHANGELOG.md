@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.0.2 — clearer routines, board alerts and reversible days off
+
+- Show only relevant recurrence controls, with explicit Monday–Friday wording and whole-day interval validation.
+- Configurable daily/interval board reminders, selected weekdays and overnight active hours; native on-top window, bundled sound, ten-minute repeat/snooze and Today shortcut. Missed alerts are skipped and unsaved forms are preserved.
+- Remove individual days off directly from Today/Journal or clear ranges in Settings; split overlapping periods and restore eligible routines without duplicate history or rewards.
+- Explicitly add active/paused routine occurrences on any chosen date, including days off; retain retrospective work and neutral rest-day statistics.
+- Additive v4 backup/defaults, scheduling/model/native failure checks and isolated Windows accountability smoke coverage.
+
 ## 4.0.1 — display and UI corrections
 
 - Use native move/resize with stable logical sizing across mixed-DPI monitors; recover inflated/off-screen geometry and resize from all edges/corners.

@@ -54,6 +54,7 @@ class Bridge(QObject):
     navigate = Signal(str)
     error = Signal(str)
     collapsedRequested = Signal(bool)
+    boardReminderTestRequested = Signal()
 
     def __init__(self, service):
         super().__init__()
@@ -122,6 +123,10 @@ class Bridge(QObject):
     @Slot(result=str)
     def getRoute(self):
         return self.route
+
+    @Slot()
+    def testBoardReminder(self):
+        self.boardReminderTestRequested.emit()
 
 
 def attach_channel(page, bridge):
@@ -631,6 +636,8 @@ def main():
         p.activateWindow()
 
     hud = HUD(profile, bridge, open_panel)
+    from board_alert import BoardAlertController
+    board_alert = BoardAlertController(service, bridge)
     def request_quit():
         pending = [s for s in service.snapshot()["sessions"] if s["status"] == "running" or s.get("needsAttention")]
         if pending:
@@ -673,6 +680,7 @@ def main():
         result = service.tick()
         if not result["ok"]:
             return
+        board_alert.poll()
         state = service.snapshot()
         attention = [x for x in state["sessions"] if x.get("needsAttention")]
         unseen = [x for x in attention if x["id"] not in announced]
@@ -695,7 +703,7 @@ def main():
     app.aboutToQuit.connect(hud.save_geometry)
 
     # keep references alive
-    app._questhud = (profile, bridge, hud, holder, service, timer, server)
+    app._questhud = (profile, bridge, hud, holder, service, timer, server, board_alert)
     sys.exit(app.exec())
 
 

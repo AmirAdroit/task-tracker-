@@ -130,7 +130,7 @@ try:
     wait(lambda: js(panel.page, 'document.querySelectorAll(".calendar button").length === 42'), 'journal calendar and daily records render')
     capture(panel, 'journal.png')
     js(panel.page, 'document.querySelector("[data-view=routines]").click(); document.querySelector("[data-action=routine-new]").click()')
-    js(panel.page, 'document.querySelector("#edit-form [name=title]").value="Karate"; document.querySelector("#edit-form [name=repeat]").value="interval"; document.querySelector("#edit-form [name=every]").value="2"; document.querySelector("#edit-form").requestSubmit()')
+    js(panel.page, 'document.querySelector("#edit-form [name=title]").value="Karate"; document.querySelector("#edit-form [name=repeat]").value="interval"; document.querySelector("#edit-form [name=repeat]").dispatchEvent(new Event("change",{bubbles:true})); document.querySelector("#edit-form [name=every]").value="2"; document.querySelector("#edit-form").requestSubmit()')
     wait(lambda: any(t['title'] == 'Karate' for t in service.snapshot()['recurring']), 'routine editor saves every-other-day schedule')
     js(panel.page, 'document.querySelector("[data-view=settings]").click(); var r=document.querySelector("[name=reviewEvery]"); r.value="45"; r.dispatchEvent(new Event("input",{bubbles:true}))')
     bridge.openView('review:' + day)

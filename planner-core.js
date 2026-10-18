@@ -15,6 +15,26 @@
   function requireItem(s, group, id) { var x = find(s, group, id); assert(x, 'This item no longer exists'); return x; }
   function create(s, group, fields) { var x = copy(fields); x.id = Q.newId(s); x.uid = s.origin + ':' + group + ':' + x.id; s[group].push(x); return x; }
   function off(s, day) { return s.daysOff.find(function (x) { return x.start <= day && x.end >= day; }); }
+  function boardReminder(input, now, previous) {
+    var b = Object.assign({enabled: false, mode: 'daily', time: '', intervalMinutes: null, days: [0, 1, 2, 3, 4, 5, 6], windowStart: '', windowEnd: '', anchor: 0}, input || {});
+    var timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+    assert(typeof b.enabled === 'boolean' && ['daily', 'interval'].indexOf(b.mode) >= 0, 'Choose a board reminder mode');
+    assert(Array.isArray(b.days) && b.days.every(function (d) { return Number.isInteger(d) && d >= 0 && d <= 6; }), 'Choose valid reminder weekdays');
+    b.days = b.days.filter(function (d, i, a) { return a.indexOf(d) === i; }).sort();
+    if (b.enabled) {
+      assert(b.days.length, 'Choose at least one reminder weekday');
+      if (b.mode === 'daily') assert(timePattern.test(b.time), 'Choose a board reminder time');
+      else {
+        b.intervalMinutes = number(b.intervalMinutes, 15, 1440, 'Board reminder interval');
+        assert(Number.isInteger(b.intervalMinutes), 'Use a whole number of minutes for reminders');
+        assert((!b.windowStart && !b.windowEnd) || (timePattern.test(b.windowStart) && timePattern.test(b.windowEnd) && b.windowStart !== b.windowEnd), 'Choose different start/end times, or leave both blank');
+      }
+    }
+    var fields = ['enabled', 'mode', 'time', 'intervalMinutes', 'days', 'windowStart', 'windowEnd'];
+    var changed = previous && fields.some(function (k) { return JSON.stringify(b[k]) !== JSON.stringify(previous[k]); });
+    b.anchor = b.enabled ? (changed ? now : Number(b.anchor) || now) : 0;
+    var result = {}; fields.concat(['anchor']).forEach(function (k) { result[k] = b[k]; }); return result;
+  }
   function normalize(input, now) {
     now = now == null ? Date.now() : now;
     var legacy = !input || Number(input.version || 0) < 4;
@@ -28,6 +48,7 @@
     var defaults = {dayBoundary: 4, reviewTime: '23:00', reviewEvery: 30, reviewEnabled: true, sessionMinutes: 60, startup: true, weekStart: 1, availability: [null, null, null, null, null, null, null]};
     s.settings = s.settings || {};
     Object.keys(defaults).forEach(function (k) { if (!(k in s.settings)) s.settings[k] = copy(defaults[k]); });
+    s.settings.boardReminder = boardReminder(s.settings.boardReminder, now);
     if (typeof s.settings.dayBoundary !== 'number') s.settings.dayBoundary = 4;
     s.settings.trackingStart = s.settings.trackingStart || trackingDay(s, now);
     s.reviews = s.reviews || {};
@@ -85,7 +106,7 @@
   function complete(s, q, now, day) {
     if (q.status === 'done') return;
     s.sessions.filter(function (x) { return x.taskId === q.id && x.status !== 'finished'; }).forEach(function (x) { settle(x, now); x.status = 'finished'; x.needsAttention = false; });
-    var r = Q.reward(q), c = snapshot(q); c.at = now; c.day = day || trackingDay(s, now); c.ms = taskEffort(s, q.id, now); c.gold = r.gold; c.xp = r.xp; c.sessionBacked = true;
+    var r = Q.reward(q), c = snapshot(q); c.at = now; c.day = day || (q.manualOccurrence ? q.occurrenceDay : trackingDay(s, now)); c.ms = taskEffort(s, q.id, now); c.gold = r.gold; c.xp = r.xp; c.sessionBacked = true;
     create(s, 'completed', c); q.status = q.workflow = 'done'; q.completedAt = now;
     s.gold += r.gold; s.goldEarned += r.gold; Q.addXp(s, r.xp); Q.checkAch(s);
   }
@@ -102,13 +123,31 @@
     }
     return false;
   }
+  function occurrence(s, t, day, manual) {
+    var q = s.quests.find(function (x) { return x.fromRecurring === t.id && x.occurrenceDay === day; });
+    if (!q) q = create(s, 'quests', {title: t.title, obj: t.obj || '', diff: t.diff || 'normal', cat: t.cat || null, projectId: t.projectId || null, status: 'active', workflow: 'active', started: null, pinned: false, due: typeof t.dueOffset === 'number' ? boundary(shift(day, t.dueOffset), 0) : null, checklist: [], fromRecurring: t.id, occurrenceDay: day, scheduledDay: day, estimateMinutes: t.estimateMinutes || null, sessionMinutes: t.sessionMinutes || null});
+    if (manual || q.suppressedByOff) { q.archived = false; delete q.suppressedByOff; }
+    if (manual) q.manualOccurrence = true;
+    if (!q.archived && !s.allocations.some(function (a) { return a.taskId === q.id && a.day === day; })) create(s, 'allocations', {taskId: q.id, day: day, minutes: t.estimateMinutes || t.sessionMinutes || s.settings.sessionMinutes, routine: true});
+    return q;
+  }
+  function restoreOff(s, start, end, now) {
+    var today = trackingDay(s, now);
+    s.recurring.filter(function (t) { return t.state === 'active'; }).forEach(function (t) {
+      var first = start > t.createdDay ? start : t.createdDay;
+      for (var day = first; day <= end && day <= today; day = shift(day, 1)) {
+        if (off(s, day)) continue;
+        var q = s.quests.find(function (x) { return x.fromRecurring === t.id && x.occurrenceDay === day; });
+        if ((q && q.suppressedByOff) || routineDue(t, day)) occurrence(s, t, day, false);
+      }
+    });
+  }
   function rollover(s, now) {
     var today = trackingDay(s, now), changed = false;
     s.recurring.forEach(function (t) {
       for (var day = t.materializedThrough ? shift(t.materializedThrough, 1) : t.createdDay; day <= today; day = shift(day, 1)) {
         if (!off(s, day) && routineDue(t, day) && !s.quests.some(function (q) { return q.fromRecurring === t.id && q.occurrenceDay === day; })) {
-          var q = create(s, 'quests', {title: t.title, obj: t.obj || '', diff: t.diff || 'normal', cat: t.cat || null, projectId: t.projectId || null, status: 'active', workflow: 'active', started: null, pinned: false, due: typeof t.dueOffset === 'number' ? boundary(shift(day, t.dueOffset), 0) : null, checklist: [], fromRecurring: t.id, occurrenceDay: day, scheduledDay: day, estimateMinutes: t.estimateMinutes || null, sessionMinutes: t.sessionMinutes || null});
-          create(s, 'allocations', {taskId: q.id, day: day, minutes: t.estimateMinutes || t.sessionMinutes || s.settings.sessionMinutes, routine: true});
+          occurrence(s, t, day, false);
         }
         t.materializedThrough = day; changed = true;
       }
@@ -166,7 +205,7 @@
     var summed = logs.reduce(function (a, x) { return a + x.ms; }, 0), known = ranged.reduce(function (a, x) { return a + x.ms; }, 0), unique = unionMs(ranged);
     var planned = s.allocations.filter(function (a) { return a.day === day; }).reduce(function (a, x) { return a + x.minutes; }, 0);
     planned += projectedRoutines(s, day).reduce(function (a, t) { return a + (t.estimateMinutes || t.sessionMinutes || s.settings.sessionMinutes); }, 0);
-    var capacity = off(s, day) ? 0 : s.settings.availability[new Date(day + 'T12:00:00').getDay()];
+    var capacity = off(s, day) ? null : s.settings.availability[new Date(day + 'T12:00:00').getDay()];
     return {day: day, entries: logs, summedMs: summed + legacy, uniqueMs: unique, untimedMs: summed - known, legacyMs: legacy, overlapMs: known - unique, plannedMinutes: planned, capacityHours: capacity, overCapacity: capacity != null && planned > capacity * 60, completed: s.completed.filter(function (c) { return (c.day || trackingDay(s, c.at)) === day; }), off: off(s, day) || null, review: s.reviews[day] || null};
   }
   function projectSummary(s, id, now) {
@@ -187,8 +226,8 @@
     if (group === 'recurring') {
       assert(['daily', 'weekdays', 'selected', 'weekly', 'interval'].indexOf(x.repeat) >= 0, 'Choose a recurrence');
       if (x.repeat === 'selected') assert(Array.isArray(x.days) && x.days.length && x.days.every(function (d) { return Number.isInteger(d) && d >= 0 && d <= 6; }), 'Choose at least one weekday');
-      if (x.repeat === 'interval') x.every = number(x.every, 1, 365, 'Repeat interval');
-      if (x.repeat === 'weekly') x.weekday = number(x.weekday, 0, 6, 'Weekday');
+      if (x.repeat === 'interval') { x.every = number(x.every, 1, 365, 'Repeat interval'); assert(Number.isInteger(x.every), 'Choose a whole number of days'); }
+      if (x.repeat === 'weekly') { x.weekday = number(x.weekday, 0, 6, 'Weekday'); assert(Number.isInteger(x.weekday), 'Choose a weekday'); }
     }
     if (x.status) assert(['active', 'backlog', 'doing', 'waiting', 'done'].indexOf(x.status) >= 0, 'Invalid task status');
     if ('diff' in x) assert(Q.DIFF[x.diff], 'Choose a valid difficulty');
@@ -237,7 +276,10 @@
       if (f.status === 'done' && q.status !== 'done') complete(s, q, now);
       assert(!(q.status === 'done' && f.status !== 'done'), 'Completed tasks retain their completion history; create a new task to repeat the work');
       Object.assign(q, f); q.workflow = q.status; break;
-    case 'task.complete': complete(s, requireItem(s, 'quests', p.id), now); break;
+    case 'task.complete':
+      q = requireItem(s, 'quests', p.id);
+      if (p.day) { date(p.day); assert(q.fromRecurring && q.occurrenceDay === p.day, 'Routine completion must use its occurrence date'); }
+      complete(s, q, now, p.day); break;
     case 'task.archive': q = requireItem(s, 'quests', p.id); q.archived = true; break;
     case 'task.reorder':
       var i = s.quests.findIndex(function (t) { return t.id === p.id; }), j = i + p.direction;
@@ -278,6 +320,10 @@
       if (p.id) { x = requireItem(s, 'recurring', p.id); Object.assign(x, f); x.materializedThrough = shift(trackingDay(s, now), -1); }
       else create(s, 'recurring', Object.assign({state: 'active', createdDay: trackingDay(s, now), obj: '', diff: 'normal'}, f));
       rollover(s, now); break;
+    case 'routine.addOccurrence':
+      x = requireItem(s, 'recurring', p.routineId); date(p.day);
+      assert(x.state !== 'archived', 'Choose an active or paused routine');
+      occurrence(s, x, p.day, true); break;
     case 'routine.state':
       x = requireItem(s, 'recurring', p.id); assert(['active', 'paused', 'archived'].indexOf(p.state) >= 0, 'Invalid routine state'); x.state = p.state; x.materializedThrough = trackingDay(s, now);
       if (p.state !== 'active') {
@@ -288,12 +334,26 @@
       break;
     case 'dayOff.save':
       date(p.start); date(p.end); assert(p.start <= p.end, 'End date must follow start date'); x = create(s, 'daysOff', {start: p.start, end: p.end, label: p.label || 'Day off'});
-      s.quests.forEach(function (t) { if (t.occurrenceDay >= p.start && t.occurrenceDay <= p.end && t.status !== 'done' && !t.archived && !s.sessions.some(function (r) { return r.taskId === t.id; })) { t.archived = true; t.suppressedByOff = true; } });
+      s.quests.forEach(function (t) { if (t.occurrenceDay >= p.start && t.occurrenceDay <= p.end && !t.manualOccurrence && t.status !== 'done' && !t.archived && !s.sessions.some(function (r) { return r.taskId === t.id; })) { t.archived = true; t.suppressedByOff = true; } });
       s.allocations = s.allocations.filter(function (a) { var t = find(s, 'quests', a.taskId); return !(a.routine && t && t.archived && off(s, a.day)); }); break;
     case 'dayOff.delete':
+      x = find(s, 'daysOff', p.id); if (!x) break;
       s.daysOff = s.daysOff.filter(function (d) { return d.id !== p.id; });
-      s.quests.forEach(function (t) { var template = find(s, 'recurring', t.fromRecurring); if (t.suppressedByOff && !off(s, t.occurrenceDay) && template && template.state === 'active') { t.archived = false; delete t.suppressedByOff; if (!s.allocations.some(function (a) { return a.taskId === t.id && a.day === t.occurrenceDay; })) create(s, 'allocations', {taskId: t.id, day: t.occurrenceDay, minutes: t.estimateMinutes || t.sessionMinutes || s.settings.sessionMinutes, routine: true}); } });
-      s.recurring.forEach(function (t) { t.materializedThrough = shift(trackingDay(s, now), -1); }); rollover(s, now); break;
+      restoreOff(s, x.start, x.end, now); break;
+    case 'dayOff.clear':
+      date(p.start); date(p.end); assert(p.start <= p.end, 'End date must follow start date');
+      var periods = s.daysOff.filter(function (d) { return d.end >= p.start && d.start <= p.end; });
+      if (!periods.length) break;
+      periods.forEach(function (d) {
+        if (d.end < p.start || d.start > p.end) return;
+        var end = d.end;
+        if (d.start < p.start) {
+          d.end = shift(p.start, -1);
+          if (end > p.end) create(s, 'daysOff', {start: shift(p.end, 1), end: end, label: d.label});
+        } else if (end > p.end) d.start = shift(p.end, 1);
+        else s.daysOff = s.daysOff.filter(function (other) { return other.id !== d.id; });
+      });
+      restoreOff(s, p.start, p.end, now); break;
     case 'review.save': case 'review.submit': case 'review.skip': case 'review.snooze': case 'review.prompt':
       date(p.day); x = s.reviews[p.day] || {day: p.day, outcomes: {}, status: 'draft'};
       if (cmd.type === 'review.prompt') x.nextPrompt = now + s.settings.reviewEvery * MIN;
@@ -327,7 +387,8 @@
       if ('reviewTime' in f) assert(/^([01]\d|2[0-3]):[0-5]\d$/.test(f.reviewTime), 'Choose a valid review time');
       if ('availability' in f) assert(Array.isArray(f.availability) && f.availability.length === 7 && f.availability.every(function (n) { return n == null || (isFinite(n) && n >= 0 && n <= 24); }), 'Availability must contain seven values between 0 and 24 hours');
       if ('weekStart' in f) number(f.weekStart, 0, 6, 'Week start');
-      Object.keys(f).forEach(function (k) { assert(['dayBoundary', 'sessionMinutes', 'reviewEvery', 'reviewTime', 'reviewEnabled', 'startup', 'availability', 'weekStart'].indexOf(k) >= 0, 'Unknown setting'); });
+      if ('boardReminder' in f) f.boardReminder = boardReminder(Object.assign({}, s.settings.boardReminder, f.boardReminder), now, s.settings.boardReminder);
+      Object.keys(f).forEach(function (k) { assert(['dayBoundary', 'sessionMinutes', 'reviewEvery', 'reviewTime', 'reviewEnabled', 'startup', 'availability', 'weekStart', 'boardReminder'].indexOf(k) >= 0, 'Unknown setting'); });
       Object.assign(s.settings, f); break;
     case 'ui.save': Object.assign(s.ui, p); break;
     case 'import.merge': merge(s, p.data, now); break;
@@ -360,7 +421,7 @@
     }
     if (root.QWebChannel && root.qt && root.qt.webChannelTransport) {
       new root.QWebChannel(root.qt.webChannelTransport, function (ch) { var b = ch.objects.bridge;
-        ready({kind: 'bridge', load: function (cb) { b.load(cb); }, dispatch: function (cmd, cb) { cmd.requestId = cmd.requestId || 'ui-' + Date.now() + '-' + Math.random(); b.dispatch(JSON.stringify(cmd), function (r) { if (cb) cb(JSON.parse(r)); }); }, onChange: function (fn) { b.dataChanged.connect(fn); }, onNavigate: function (fn) { b.navigate.connect(fn); b.getRoute(fn); }, setOpacity: function (v) { b.setWindowOpacity(v); }, setZoom: function (v) { b.setZoom(v); }, setCollapsed: function (v) { b.setCollapsed(v); }, openPanel: function (tab) { b.openView(tab || 'today'); }, exportData: function () { b.exportData(); }, importData: function (cb) { b.importData(cb); }});
+        ready({kind: 'bridge', testBoardReminder: function(){ b.testBoardReminder(); }, load: function (cb) { b.load(cb); }, dispatch: function (cmd, cb) { cmd.requestId = cmd.requestId || 'ui-' + Date.now() + '-' + Math.random(); b.dispatch(JSON.stringify(cmd), function (r) { if (cb) cb(JSON.parse(r)); }); }, onChange: function (fn) { b.dataChanged.connect(fn); }, onNavigate: function (fn) { b.navigate.connect(fn); b.getRoute(fn); }, setOpacity: function (v) { b.setWindowOpacity(v); }, setZoom: function (v) { b.setZoom(v); }, setCollapsed: function (v) { b.setCollapsed(v); }, openPanel: function (tab) { b.openView(tab || 'today'); }, exportData: function () { b.exportData(); }, importData: function (cb) { b.importData(cb); }});
       });
     } else preview();
   }

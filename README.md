@@ -63,7 +63,21 @@ Reviews begin on the upgrade tracking day. Startup/resume gathers unanswered day
 
 Each routine date is independent; an unfinished yesterday does not block today. Future routine effort is forecast in the weekly capacity totals without generating future task cards. Editing a routine affects future occurrences; existing occurrence records retain their recorded identity. Pause stops scheduling temporarily; archive stops future appearances while retaining history. Resume starts again from the current day without filling the paused interval.
 
-Plan **days off** using one date or an inclusive range, in advance or retrospectively. Automatic routine occurrences and review prompts are suppressed, and routine statistics exclude those dates. Catch-up waits until a normal tracking day. Deadlines, actual work and completions remain intact, and manual logging remains available. Removing time off restores current suppressed occurrences.
+The routine editor shows controls for the selected pattern: Daily needs no extra controls, Monday–Friday is fixed, Selected weekdays shows checkboxes, Weekly asks for one day, and Every N days asks for a whole-number interval (1–365) and an optional first-occurrence anchor. Without an anchor, intervals use the routine's creation date. Optional start/end dates and effort settings remain available. Switching patterns preserves your temporary input within the editor.
+
+Plan **days off** using one date or an inclusive range, in advance or retrospectively. Automatic routine occurrences and daily review prompts are suppressed, and routine statistics exclude those dates. Catch-up waits until a normal tracking day. Deadlines, actual work and completions remain intact, and manual logging remains available.
+
+Use **Remove day off** on Today's banner or the Journal's selected date to make that date normal again. Clearing a date inside a longer period splits the period and preserves its other dates and labels, including overlapping periods. Settings also offers **Remove days off…** for a range and **Remove entire period** for one saved period. Eligible active routines are restored through today without duplicate occurrences or rewards; future dates return to forecasting. Paused/archived routines stay paused/archived. Existing submitted reviews and work remain intact; cleared dates become eligible for normal reviews.
+
+Use **Add routine to this day** in Today or Journal to choose an active or paused routine explicitly, even on a day off. Log time, start a session, or complete it normally without resuming its repeating schedule. Existing occurrences are reused. Manual logs and retrospective completions use the selected date; the actual completion timestamp is retained. Optional work counts toward effort without missed-routine penalties or rest-day capacity warnings.
+
+## Board reminders
+
+In **Settings → Board reminders**, enable one schedule: **At a daily time** or **Every X hours** (0.25–24 hours, in quarter-hour steps). Choose weekdays and, for interval reminders, optional active hours; overnight windows such as 22:00–02:00 are supported. Weekday choices refer to each reminder's local calendar date, independently of the tracking-day boundary. Board reminders run on planned days off. They are initially disabled until you configure them.
+
+The native on-top window plays a bundled sound and offers **Open board** (Today), **Snooze 10 minutes**, and **Dismiss**. Unanswered windows sound again every ten minutes. Closing/Escape snoozes rather than dismissing. One alert remains pending; overlapping occurrences do not produce more windows or interrupt a snooze. Unsaved editors and settings are preserved; finish/save them before navigating to Today. **Test alert** previews the window and sound without saving or changing the schedule.
+
+Interval cadence starts when its configuration is enabled/changed; the anchor survives restarts. Outside the chosen days/hours there are no alerts. Pending alerts end at local midnight or the active-hours end, whichever comes first. Resume/relaunch skips missed reminders and stale snoozes; only future schedule slots trigger. Windows power events and scheduling gaps over 90 seconds discard stale alerts. Daily review catch-up remains separate. Sound uses the current Windows audio device/volume; QuestHUD does not change volume, wake the PC, or run after you quit it.
 
 ## Architecture and repository
 
@@ -81,6 +95,7 @@ HUD / panel → QWebChannel commands → StateService → QJSEngine / shared red
 | `planner-core.js` | Migration, commands, sessions, reviews, recurrence, planning and aggregation |
 | `state_service.py` | Canonical state, shared JS engine, persistence, backups, reminders, startup integration |
 | `hud.py` | Windows, bridge, native scheduler, tray, single-instance guard and quit workflow |
+| `board_reminder.py`, `board_alert.py`, `assets/board-alert.wav` | Transient reminder scheduler, native attention window and original bundled sound |
 | `hud.html`, `hud-ui.js` | Compact overlay |
 | `panel.html`, `panel.css`, `panel.js`, `ui-common.js` | Planner UI and shared dialogs |
 | `tests/` | Model tests, native-service tests, syntax checks and isolated Windows UI smoke test |
@@ -94,6 +109,8 @@ Everything personal lives in `data/quests.json`. Local JSON is **not encrypted**
 
 Before upgrading from v2/v3, QuestHUD makes a byte-for-byte backup in `data/backups/` with a `pre-v4` filename and content hash. It preserves categories, tasks, recurring templates, history and rewards. Old running timers are stopped and flagged for manual effort review. Legacy completed durations over 12 hours are preserved but excluded from effort totals until corrected or explicitly accepted in Settings. Completion records are never fabricated into historical sessions.
 
+Existing v4 saves without board-reminder settings receive a byte-exact `pre-board-reminders` backup before additive defaults are saved. The JSON version remains 4. Export includes the reminder configuration and interval anchor; transient popups/snoozes are not exported. Import merge retains this installation's settings; import replace restores the backup's settings, with no missed-alert catch-up.
+
 Settings → Backup exports all planning/tracking data. Import replace/merge makes a `pre-import` backup. Merge remaps entity relationships, deduplicates stable identities, and awards only newly imported completion rewards. Re-importing the same backup does not award them again. Malformed or newer saves fail visibly rather than resetting your data.
 
 **Recovery:** quit QuestHUD, copy the chosen backup over `data/quests.json`, and relaunch. To roll back to old application code, first restore its corresponding pre-v4 save; old code does not understand v4 sessions/reviews. Keep off-device copies of exports or the save; automatic backups are on the same disk and do not protect against disk loss. Backup retention is manual.
@@ -106,11 +123,14 @@ node --test tests/core.test.cjs
 .venv\Scripts\python.exe -B -m unittest discover -s tests -p "test_*.py" -v
 .venv\Scripts\python.exe -B tests/smoke_windows.py
 .venv\Scripts\python.exe -B tests/smoke_displays.py
+.venv\Scripts\python.exe -B tests/smoke_accountability.py
 ```
 
 The smoke test opens the actual Qt windows using synthetic data under `data/ui-smoke/`, captures screenshots there, and checks QWebChannel synchronization, Persian text, editor preservation, session expiration, planner/journal rendering, routine creation and review drafts. It needs an interactive Windows desktop; CI runs syntax/model/native-service tests. Native tests use isolated data and test startup shortcuts only inside a temporary test folder.
 
 The display smoke test repeatedly transfers an isolated HUD between the connected monitors, tests delayed DPI-inflation recovery, resizing persistence, all eight handles, folding, tray recovery, and quit shortcuts. It records synthetic screenshots and geometry under `data/display-smoke/`. Two differently scaled monitors are needed to exercise a real DPI transition; with one monitor, geometry/unit and simulated-inflation cases still run.
+
+The accountability smoke test covers conditional recurrence controls, optional rest-day routines/logging, direct day-off removal, reminder settings, real native popup buttons, editor preservation and the Windows sound playback API. Screenshots use synthetic data under `data/accountability-smoke/`. Repeat/snooze/resume timings use injected clocks; these are not physical suspend/reboot or speaker-audibility tests. Use **Test alert** to check sound on your current audio device.
 
 For an isolated manual installation:
 
@@ -124,7 +144,8 @@ $env:QUESTHUD_DATA_DIR = Join-Path $PWD 'data\sandbox'
 ## Troubleshooting and limitations
 
 - **Blank panel:** keep all HTML/JS/CSS files together. Run `run.bat` to see Python errors. Check asset completeness with the syntax command.
-- **No reminders:** check Settings, planned days off, whether the app is in the tray, and Windows notification settings. A persistent pending-review indicator remains available.
+- **No daily reviews:** check Settings, planned days off, whether the app is in the tray, and Windows notification settings. A persistent pending-review indicator remains available.
+- **No board alert/sound:** enable and save its schedule, check its weekdays/active hours, and use Test alert. Check your output device/volume. Missed board alerts deliberately do not catch up; these reminders need the Windows app running, and work on days off.
 - **Save error:** the app reports it and retains its previous state. Resolve disk/permission problems before retrying. Never delete the save to work around an error.
 - **Transparent HUD appears opaque:** toggle Solid background, restart, or check GPU drivers. Fullscreen/GPU composition varies between machines.
 - **Unexpected totals:** compare summed and unique effort. Review legacy corrections and parallel sessions. Time is self-reported; there is no activity surveillance.

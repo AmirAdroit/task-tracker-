@@ -12,6 +12,7 @@ import time
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtQml import QJSEngine
+from board_reminder import BoardReminder
 
 BASE = Path(__file__).resolve().parent
 
@@ -43,6 +44,7 @@ class StateService(QObject):
         super().__init__()
         self.path = Path(data_file)
         self.clock = clock or (lambda: int(time.time() * 1000))
+        self.board_reminder = BoardReminder()
         self.host_integration = host_integration
         self.engine = QJSEngine(self)
         self._eval("var window = this;")
@@ -59,6 +61,8 @@ class StateService(QObject):
             raise ValueError("This save belongs to a newer QuestHUD version.")
         if raw is not None and raw.get("version", 0) < 4:
             self.backup("pre-v4")
+        elif raw is not None and "boardReminder" not in raw.get("settings", {}):
+            self.backup("pre-board-reminders")
         self._eval("var current = QC.normalize(" + json.dumps(raw, ensure_ascii=True) + "," + str(self.clock()) + ");")
         self._eval("current = QC.apply(current, {type:'sessions.recover'}, " + str(self.clock()) + ");")
         self._eval("current = QC.apply(current, {type:'tick'}, " + str(self.clock()) + ");")
@@ -158,3 +162,6 @@ class StateService(QObject):
                     self.dispatch({"type": "review.prompt", "payload": {"day": day}})
             return days
         return []
+
+    def board_reminder_action(self):
+        return self.board_reminder.poll(self.snapshot()["settings"]["boardReminder"], self.clock())

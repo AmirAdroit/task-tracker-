@@ -111,6 +111,41 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(sum(q["title"] == "Only once" for q in restarted.snapshot()["quests"]), 1)
         restarted.deleteLater()
 
+    def test_board_reminder_backup_settings_restart_and_day_off(self):
+        old = self.service.snapshot()
+        del old["settings"]["boardReminder"]
+        path = Path(self.temp.name) / "old-v4.json"
+        path.write_text(json.dumps(old), encoding="utf-8")
+        original = path.read_bytes()
+        upgraded = StateService(path, clock=lambda: self.now)
+        backups = list((path.parent / "backups").glob("*pre-board-reminders*.json"))
+        self.assertEqual(backups[-1].read_bytes(), original)
+        self.assertFalse(upgraded.snapshot()["settings"]["boardReminder"]["enabled"])
+        upgraded.deleteLater()
+        self.now = QDateTime.fromString("2026-10-18T12:59:59", "yyyy-MM-ddTHH:mm:ss").toMSecsSinceEpoch()
+        self.command("dayOff.save", {"start":"2026-10-18", "end":"2026-10-18"})
+        self.assertTrue(self.command("settings.save", {"fields":{"boardReminder":{"enabled":True,"mode":"daily","time":"13:00"}}})["ok"])
+        self.assertIsNone(self.service.board_reminder_action())
+        self.now += 1000
+        self.assertEqual(self.service.board_reminder_action(), "show")
+        self.assertEqual(self.service.reminder_days(), [])
+        restarted = StateService(self.path, clock=lambda:self.now)
+        self.assertEqual(restarted.snapshot()["settings"]["boardReminder"], self.service.snapshot()["settings"]["boardReminder"])
+        self.assertIsNone(restarted.board_reminder_action())
+        restarted.deleteLater()
+
+    def test_new_commands_remain_atomic_on_failed_write(self):
+        self.command("routine.save", {"fields":{"title":"روزانه", "repeat":"daily"}})
+        rid = self.service.snapshot()["recurring"][-1]["id"]
+        self.command("dayOff.save", {"start":"2026-10-18", "end":"2026-10-21"})
+        before = self.path.read_bytes()
+        for kind, payload in [("dayOff.clear",{"start":"2026-10-19","end":"2026-10-19"}),
+                              ("routine.addOccurrence",{"routineId":rid,"day":"2026-10-18"})]:
+            with patch.object(self.service,"_write",side_effect=OSError("disk full")):
+                self.assertFalse(self.command(kind,payload)["ok"])
+            self.assertEqual(self.path.read_bytes(), before)
+            self.assertEqual(json.loads(before), self.service.snapshot())
+
     @unittest.skipUnless(sys.platform == 'win32', 'Windows shortcut integration')
     def test_startup_toggle_in_isolated_folder(self):
         folder = Path(self.temp.name)
