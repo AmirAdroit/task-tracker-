@@ -33,6 +33,8 @@ Bridge interface: `load()` returns JSON; `dispatch(commandJson)` returns `{ok,st
 - Preserve stable `uid` identities across exports/merges, remap numeric references, and deduplicate completion rewards.
 - Preserve originals for suspicious legacy durations and corrected timer records. Do not invent historical ranges.
 - A background signal must not wipe typed fields, settings, open dialogs or focus. Review drafts save as the user types.
+- Each editor owns its DOM and pending submission. Late replies must not close a later editor, attach errors to it or replace a snapshot with a lower revision. Preserve conditional disabled states when unlocking after a failed save.
+- Preserve selected archived relationships during edits. Delay filter/date redraws until a pending pointer action has received its click; retain keyboard focus and same-view scroll. Keep long editor actions visible at 640x460.
 
 ## Conventions and safety
 
@@ -48,11 +50,12 @@ Run from the repository root:
 
 ```bat
 node tests/check_syntax.cjs
-node --test tests/core.test.cjs
+node --test tests/core.test.cjs tests/ui.test.cjs
 .venv\Scripts\python.exe -B -m unittest discover -s tests -p "test_*.py" -v
 .venv\Scripts\python.exe -B tests/smoke_windows.py
 .venv\Scripts\python.exe -B tests/smoke_displays.py
 .venv\Scripts\python.exe -B tests/smoke_accountability.py
+.venv\Scripts\python.exe -B tests/smoke_panel.py
 ```
 
 Install via `run.bat` (Python 3.10–3.14, pinned PySide6). The smoke test needs an interactive Windows desktop and opens real Qt windows. CI covers the first three commands on Windows. Inspect captured synthetic screenshots for layout quality; passing DOM assertions alone does not prove visual quality.
