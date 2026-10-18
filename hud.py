@@ -5,17 +5,21 @@ they stay in sync. Run via run.bat (installs Python deps automatically).
 """
 import os
 import sys
+import json
+import hashlib
+from pathlib import Path
 
 # Must be set BEFORE QtWebEngine is imported so the overlay can be transparent.
 os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--enable-transparent-visuals")
 
 try:
-    from PySide6.QtCore import Qt, QUrl, QSettings, QObject, Signal, Slot
+    from PySide6.QtCore import Qt, QUrl, QSettings, QObject, Signal, Slot, QTimer
+    from PySide6.QtNetwork import QLocalServer, QLocalSocket
     from PySide6.QtGui import (QGuiApplication, QIcon, QPixmap, QPainter,
                                QColor, QAction, QPainterPath)
     from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
                                    QPushButton, QLabel, QSystemTrayIcon, QMenu, QFileDialog,
-                                   QSizeGrip)
+                                   QSizeGrip, QMessageBox)
     from PySide6.QtWebEngineWidgets import QWebEngineView
     from PySide6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
     from PySide6.QtWebChannel import QWebChannel
@@ -28,8 +32,9 @@ except ImportError:
 BASE = os.path.dirname(os.path.abspath(__file__))
 HUD_HTML = os.path.join(BASE, "hud.html")
 PANEL_HTML = os.path.join(BASE, "panel.html")
-DATA = os.path.join(BASE, "data")
+DATA = os.environ.get("QUESTHUD_DATA_DIR", os.path.join(BASE, "data"))
 DATA_FILE = os.path.join(DATA, "quests.json")
+from state_service import StateService
 
 WIN_W, WIN_H = 300, 560
 BAR_H = 22
@@ -39,48 +44,42 @@ ACCENT = "#6e8efb"
 
 
 class Bridge(QObject):
-    """Exposed to both web pages. Owns the shared JSON file on disk."""
+    """Command bridge. Pages never replace the application's whole state."""
     dataChanged = Signal()
     opacityRequested = Signal(float)
     zoomRequested = Signal(float)
     openPanelRequested = Signal()
+    navigate = Signal(str)
+    error = Signal(str)
 
-    def __init__(self, path):
+    def __init__(self, service):
         super().__init__()
-        self._path = path
+        self.service = service
+        self.route = "today"
+        service.changed.connect(self.dataChanged)
+        service.failed.connect(self.error)
 
     @Slot(result=str)
     def load(self):
-        try:
-            if os.path.exists(self._path):
-                with open(self._path, "r", encoding="utf-8") as f:
-                    return f.read()
-        except Exception:
-            pass
-        return ""
+        return json.dumps(self.service.snapshot(), ensure_ascii=False)
 
-    @Slot(str)
-    def save(self, data):
+    @Slot(str, result=str)
+    def dispatch(self, command):
         try:
-            os.makedirs(os.path.dirname(self._path), exist_ok=True)
-            tmp = self._path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                f.write(data)
-            os.replace(tmp, self._path)
-        except Exception:
-            pass
-        self.dataChanged.emit()
+            return json.dumps(self.service.dispatch(json.loads(command)), ensure_ascii=False)
+        except Exception as exc:
+            return json.dumps({"ok": False, "error": str(exc)})
 
-    @Slot(str)
-    def exportData(self, data):
+    @Slot()
+    def exportData(self):
         fn, _ = QFileDialog.getSaveFileName(None, "Export Quest HUD backup",
                                             "quest-backup.json", "JSON files (*.json)")
         if fn:
             try:
                 with open(fn, "w", encoding="utf-8") as f:
-                    f.write(data)
-            except Exception:
-                pass
+                    json.dump(self.service.snapshot(), f, ensure_ascii=False, indent=2)
+            except Exception as exc:
+                self.error.emit("Export failed: " + str(exc))
 
     @Slot(result=str)
     def importData(self):
@@ -90,7 +89,8 @@ class Bridge(QObject):
             try:
                 with open(fn, "r", encoding="utf-8") as f:
                     return f.read()
-            except Exception:
+            except Exception as exc:
+                self.error.emit("Import failed: " + str(exc))
                 return ""
         return ""
 
@@ -105,6 +105,16 @@ class Bridge(QObject):
     @Slot()
     def openPanel(self):
         self.openPanelRequested.emit()
+
+    @Slot(str)
+    def openView(self, view):
+        self.route = view
+        self.openPanelRequested.emit()
+        self.navigate.emit(view)
+
+    @Slot(result=str)
+    def getRoute(self):
+        return self.route
 
 
 def attach_channel(page, bridge):
@@ -203,7 +213,7 @@ class HUD(QWidget):
         self.grip.raise_()
 
         self.bar.hideBtn.clicked.connect(self.hide)
-        self.bar.quitBtn.clicked.connect(QApplication.instance().quit)
+        self.bar.quitBtn.clicked.connect(lambda: self.request_quit())
 
         self._restore_geometry()
         self._build_tray()
@@ -245,7 +255,7 @@ class HUD(QWidget):
         self.act_click = QAction("Click-through (let mouse pass)", self, checkable=True)
         self.act_click.triggered.connect(self._toggle_clickthrough)
         act_quit = QAction("Quit", self)
-        act_quit.triggered.connect(QApplication.instance().quit)
+        act_quit.triggered.connect(lambda: self.request_quit())
         menu.addAction(act_show)
         menu.addAction(act_panel)
         menu.addAction(self.act_click)
@@ -335,10 +345,28 @@ def main():
     app.setQuitOnLastWindowClosed(False)
     os.makedirs(DATA, exist_ok=True)
 
+    # One writer per data directory, including test installations.
+    identity = "questhud-" + hashlib.sha256(os.path.abspath(DATA).lower().encode()).hexdigest()[:20]
+    socket = QLocalSocket()
+    socket.connectToServer(identity)
+    if socket.waitForConnected(400):
+        socket.write(b"show")
+        socket.waitForBytesWritten(400)
+        return
+    server = QLocalServer()
+    QLocalServer.removeServer(identity)
+    if not server.listen(identity):
+        QMessageBox.critical(None, "QuestHUD", "Could not acquire the application's single-instance lock.")
+        return
+    try:
+        service = StateService(Path(DATA_FILE), host_integration=False)
+    except Exception as exc:
+        QMessageBox.critical(None, "QuestHUD data error", str(exc) + "\nYour save has not been replaced.")
+        return
     profile = QWebEngineProfile("questhud")
-    profile.setPersistentStoragePath(DATA)
-    profile.setCachePath(DATA)
-    bridge = Bridge(DATA_FILE)
+    profile.setPersistentStoragePath(os.path.join(DATA, "web-profile"))
+    profile.setCachePath(os.path.join(DATA, "web-cache"))
+    bridge = Bridge(service)
 
     holder = {"panel": None}
 
@@ -351,14 +379,70 @@ def main():
         p.activateWindow()
 
     hud = HUD(profile, bridge, open_panel)
+    def request_quit():
+        pending = [s for s in service.snapshot()["sessions"] if s["status"] == "running" or s.get("needsAttention")]
+        if pending:
+            box = QMessageBox(hud)
+            box.setWindowTitle("Finish for now?")
+            box.setText("There are running or unresolved sessions. Pause them or finish the sessions before quitting.")
+            pause = box.addButton("Pause sessions", QMessageBox.AcceptRole)
+            finish = box.addButton("Finish sessions", QMessageBox.AcceptRole)
+            box.addButton(QMessageBox.Cancel)
+            box.exec()
+            button = box.clickedButton()
+            if button not in (pause, finish):
+                return
+            result = service.dispatch({"type": "sessions.pauseAll" if button == pause else "sessions.finishAll"})
+            if not result["ok"]:
+                return
+        app.quit()
+    hud.request_quit = request_quit
     bridge.openPanelRequested.connect(open_panel)
     bridge.opacityRequested.connect(hud.setWindowOpacity)
     bridge.zoomRequested.connect(hud.set_zoom)
     hud.show()
+    service.failed.connect(lambda message: QMessageBox.warning(holder["panel"] or hud, "QuestHUD", message))
+    if not os.environ.get("QUESTHUD_DATA_DIR"):
+        service.host_integration = True
+        QTimer.singleShot(1500, service.sync_startup)
+
+    def incoming():
+        connection = server.nextPendingConnection()
+        if connection:
+            connection.waitForReadyRead(200)
+            connection.readAll()
+            open_panel()
+            connection.disconnectFromServer()
+            connection.deleteLater()
+    server.newConnection.connect(incoming)
+    announced = set()
+    def maintain():
+        result = service.tick()
+        if not result["ok"]:
+            return
+        state = service.snapshot()
+        attention = [x for x in state["sessions"] if x.get("needsAttention")]
+        unseen = [x for x in attention if x["id"] not in announced]
+        # Planned days off are quiet; unresolved sessions remain visible in Today.
+        day_off = service._eval("!!QC.isOff(current, QC.trackingDay(current," + str(service.clock()) + "))").toBool()
+        if unseen and not day_off:
+            announced.update(x["id"] for x in unseen)
+            hud.tray.showMessage("Session needs your attention", "Finish or extend your session in QuestHUD.")
+            bridge.openView("today")
+        announced.intersection_update(x["id"] for x in attention)
+        days = service.reminder_days()
+        if days:
+            hud.tray.showMessage("Daily check-in", str(len(days)) + " day(s) waiting for review.")
+            bridge.openView("review:" + days[-1])
+    timer = QTimer(app)
+    timer.setInterval(1000)
+    timer.timeout.connect(maintain)
+    timer.start()
+    QTimer.singleShot(2000, maintain)
     app.aboutToQuit.connect(hud.save_geometry)
 
     # keep references alive
-    app._questhud = (profile, bridge, hud, holder)
+    app._questhud = (profile, bridge, hud, holder, service, timer, server)
     sys.exit(app.exec())
 
 

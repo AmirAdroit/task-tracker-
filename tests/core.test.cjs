@@ -1,0 +1,197 @@
+'use strict';
+process.env.TZ = 'UTC';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const path = require('node:path');
+const context = vm.createContext({window: {}, Date, Math, JSON, Number, Object, Array, String, Error, isFinite});
+for (const file of ['quest-core.js', 'planner-core.js']) vm.runInContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), context);
+const Q = context.window.QC, MIN = 60000, H = 60 * MIN;
+const at = value => new Date(value).getTime();
+const t0 = at('2026-10-18T12:00:00Z');
+const plain = value => JSON.parse(JSON.stringify(value));
+function fresh(now = t0) { const s = Q.defaultState(now); s.quests = []; s.recurring = []; s.completed = []; s.sessions = []; s.gold = s.goldEarned = s.totalMs = 0; return s; }
+function apply(s, type, payload = {}, now = t0) { return Q.apply(s, {type, payload}, now); }
+function task(s, title = 'Work', extra = {}) { return apply(s, 'task.add', {title, ...extra}); }
+function last(s, group) { return s[group][s[group].length - 1]; }
+
+test('migration preserves rewards and history, excludes suspicious legacy time, and stops old timers', () => {
+  const old = {version: 2, gold: 50, goldEarned: 70, quests: [{id: 1, title: 'Old', started: t0 - 700 * H}], recurring: [], completed: [{title: 'Long', at: t0, ms: 744 * H, xp: 30}, {title: 'Short', at: t0, ms: H}], nextId: 2};
+  const s = Q.normalize(old, t0);
+  assert.equal(s.version, 4); assert.equal(s.gold, 50); assert.equal(s.completed[0].originalMs, 744 * H);
+  assert.equal(s.completed[0].timeReview, 'pending'); assert.equal(Q.totalEffort(s, t0), H);
+  assert.equal(s.quests[0].started, null); assert.equal(s.quests[0].legacyTimerNeedsReview, true);
+  assert.equal(s.settings.trackingStart, '2026-10-18'); assert.equal(s.sessions.length, 0);
+});
+test('normalizing v4 keeps doing, waiting, and done independent of time', () => {
+  let s = task(fresh()); const id = last(s, 'quests').id;
+  s = apply(s, 'task.edit', {id, fields: {status: 'doing'}}); s = Q.normalize(s, t0);
+  assert.equal(s.quests[0].status, 'doing'); assert.equal(s.sessions.length, 0);
+});
+test('three-hour sessions expire at exactly three hours even after 700 hours', () => {
+  let s = task(fresh(), 'Gaming'), id = last(s, 'quests').id;
+  s = apply(s, 'session.start', {taskId: id, minutes: 180}); const sid = last(s, 'sessions').id;
+  s = apply(s, 'tick', {}, t0 + 700 * H);
+  assert.equal(Q.elapsed(s.sessions[0], t0 + 900 * H), 3 * H); assert.equal(s.sessions[0].status, 'expired');
+  assert.equal(s.quests[0].status, 'doing'); assert.equal(s.completed.length, 0); assert.equal(s.sessions[0].segments[0].end, t0 + 3 * H);
+  s = apply(s, 'session.extend', {id: sid, minutes: 30}, t0 + 701 * H);
+  s = apply(s, 'session.finish', {id: sid}, t0 + 701 * H + 15 * MIN);
+  assert.equal(Q.elapsed(s.sessions[0], t0 + 900 * H), 3 * H + 15 * MIN);
+});
+test('pause and resume exclude gaps; repeat clicks cannot reset a running session', () => {
+  let s = task(fresh()), id = s.quests[0].id;
+  s = apply(s, 'session.start', {taskId: id, minutes: 60}); const sid = s.sessions[0].id;
+  s = apply(s, 'session.pause', {id: sid}, t0 + 10 * MIN);
+  s = apply(s, 'session.resume', {id: sid}, t0 + 2 * H);
+  assert.throws(() => apply(s, 'session.resume', {id: sid}, t0 + 3 * H));
+  s = apply(s, 'session.finish', {id: sid}, t0 + 2 * H + 20 * MIN);
+  assert.equal(Q.elapsed(s.sessions[0], t0 + 10 * H), 30 * MIN);
+});
+test('shutdown recovery never resumes automatically and stays bounded', () => {
+  let s = task(fresh()); s = apply(s, 'session.start', {taskId: s.quests[0].id, minutes: 60});
+  s = apply(s, 'sessions.recover', {}, t0 + 15 * MIN);
+  assert.equal(s.sessions[0].status, 'recovery'); assert.equal(s.sessions[0].needsAttention, true);
+  assert.equal(Q.elapsed(s.sessions[0], t0 + 100 * H), 15 * MIN);
+});
+test('multiple timers count summed and unique time correctly', () => {
+  let s = task(task(fresh(), 'A'), 'B');
+  s = apply(s, 'session.start', {taskId: s.quests[0].id, minutes: 120});
+  s = apply(s, 'session.start', {taskId: s.quests[1].id, minutes: 120}, t0 + 30 * MIN);
+  const d = Q.daySummary(s, '2026-10-18', t0 + H);
+  assert.equal(d.summedMs, 90 * MIN); assert.equal(d.uniqueMs, H); assert.equal(d.overlapMs, 30 * MIN);
+});
+test('manual duration belongs to selected day; edits and deletion never double count', () => {
+  let s = task(fresh()); const taskId = s.quests[0].id;
+  s = apply(s, 'log.save', {taskId, day: '2026-10-17', minutes: 120, note: 'Study'});
+  assert.equal(Q.daySummary(s, '2026-10-17', t0).summedMs, 2 * H); assert.equal(Q.daySummary(s, '2026-10-17', t0).uniqueMs, 0);
+  const id = s.sessions[0].id; s = apply(s, 'log.save', {id, taskId, day: '2026-10-17', minutes: 60});
+  assert.equal(Q.totalEffort(s, t0), H); assert.equal(s.completed.length, 0);
+  s = apply(s, 'log.delete', {id}); assert.equal(Q.totalEffort(s, t0), 0);
+});
+test('time ranges split at 04:00 including across month boundaries', () => {
+  let s = task(fresh()); const taskId = s.quests[0].id;
+  s = apply(s, 'log.save', {taskId, day: '2026-10-31', minutes: 120, start: at('2026-11-01T03:00:00Z'), end: at('2026-11-01T05:00:00Z')});
+  assert.equal(Q.daySummary(s, '2026-10-31', t0).summedMs, H); assert.equal(Q.daySummary(s, '2026-11-01', t0).summedMs, H);
+  assert.equal(Q.trackingDay(s, at('2026-10-18T01:00:00Z')), '2026-10-17');
+});
+test('invalid time ranges and zero-length timer sessions are rejected atomically', () => {
+  let s = task(fresh()), before = JSON.stringify(s), taskId = s.quests[0].id;
+  assert.throws(() => apply(s, 'session.start', {taskId, minutes: 0}));
+  assert.throws(() => apply(s, 'log.save', {taskId, day: '2026-10-18', minutes: 30, start: t0, end: t0 - 1}));
+  assert.equal(JSON.stringify(s), before);
+});
+test('completion grants rewards once and does not duplicate session effort', () => {
+  let s = task(fresh()), id = s.quests[0].id;
+  s = apply(s, 'log.save', {taskId: id, day: '2026-10-18', minutes: 60});
+  s = apply(s, 'task.complete', {id}); const gold = s.gold;
+  s = apply(s, 'task.complete', {id}); assert.equal(s.gold, gold); assert.equal(s.completed.length, 1); assert.equal(Q.totalEffort(s, t0), H);
+});
+test('request IDs make retried commands idempotent', () => {
+  const c = {type: 'task.add', payload: {title: 'One'}, requestId: 'same'};
+  const s = Q.apply(Q.apply(fresh(), c, t0), c, t0); assert.equal(s.quests.length, 1);
+});
+test('daily occurrences are independent and unfinished days never block tomorrow', () => {
+  let s = apply(fresh(), 'routine.save', {fields: {title: 'Daily', repeat: 'daily', estimateMinutes: 15}});
+  assert.equal(s.quests.length, 1); s = apply(s, 'tick', {}, t0 + 24 * H);
+  assert.equal(s.quests.length, 2); assert.equal(s.quests[0].occurrenceDay, '2026-10-18'); assert.equal(s.quests[1].occurrenceDay, '2026-10-19');
+  s = apply(s, 'tick', {}, t0 + 24 * H); assert.equal(s.quests.length, 2);
+});
+test('selected weekdays, weekly, and interval schedules respect boundaries', () => {
+  const common = {state: 'active', createdDay: '2026-10-18'};
+  assert.equal(Q.routineDue({...common, repeat: 'selected', days: [1, 3]}, '2026-10-19'), true);
+  assert.equal(Q.routineDue({...common, repeat: 'selected', days: [1, 3]}, '2026-10-20'), false);
+  assert.equal(Q.routineDue({...common, repeat: 'weekly', weekday: 0}, '2026-10-18'), true);
+  assert.equal(Q.routineDue({...common, repeat: 'interval', every: 2, start: '2026-10-18', end: '2026-10-22'}, '2026-10-20'), true);
+  assert.equal(Q.routineDue({...common, repeat: 'interval', every: 2, start: '2026-10-18', end: '2026-10-22'}, '2026-10-24'), false);
+});
+test('archived routines keep history and stop appearing', () => {
+  let s = apply(fresh(), 'routine.save', {fields: {title: 'Daily', repeat: 'daily'}}), rid = s.recurring[0].id;
+  s = apply(s, 'task.complete', {id: s.quests[0].id}); s = apply(s, 'routine.state', {id: rid, state: 'archived'});
+  s = apply(s, 'tick', {}, t0 + 48 * H); assert.equal(s.quests.length, 1); assert.equal(s.completed.length, 1);
+});
+test('days off suppress occurrences and prompts, preserve deadlines and manual logging', () => {
+  let s = task(fresh(), 'Deadline', {due: t0}); s = apply(s, 'routine.save', {fields: {title: 'Daily', repeat: 'daily'}});
+  s = apply(s, 'dayOff.save', {start: '2026-10-18', end: '2026-10-20', label: 'Travel'});
+  assert.equal(Q.expected(s, '2026-10-18').length, 0); assert.equal(s.quests[0].due, t0);
+  assert.equal(Q.pendingReviews(s, t0 + 12 * H).length, 0);
+  s = apply(s, 'tick', {}, t0 + 48 * H); assert.equal(s.quests.filter(q => !q.archived && q.fromRecurring).length, 0);
+  s = apply(s, 'log.save', {taskId: s.quests[0].id, day: '2026-10-19', minutes: 30}); assert.equal(Q.daySummary(s, '2026-10-19', t0).summedMs, 30 * MIN);
+});
+test('review timing handles before/after-midnight and upgrade start without ancient catch-up', () => {
+  let s = fresh(); assert.deepEqual(plain(Q.pendingReviews(s, at('2026-10-18T22:59:00Z'))), []);
+  assert.deepEqual(plain(Q.pendingReviews(s, at('2026-10-18T23:00:00Z'))), ['2026-10-18']);
+  s = apply(s, 'settings.save', {fields: {reviewTime: '01:00'}});
+  assert.equal(Q.reviewAt(s, '2026-10-18'), at('2026-10-19T01:00:00Z'));
+});
+test('reviews preserve draft, require outcomes, and submit retrospectively without duplicate rewards', () => {
+  let s = task(fresh()), id = s.quests[0].id;
+  s = apply(s, 'allocation.save', {taskId: id, day: '2026-10-18', minutes: 60});
+  s = apply(s, 'review.save', {day: '2026-10-18', note: 'draft', outcomes: {[id]: 'partial'}});
+  assert.equal(s.reviews['2026-10-18'].status, 'draft');
+  assert.throws(() => apply(s, 'review.submit', {day: '2026-10-18', outcomes: {}}));
+  s = apply(s, 'review.submit', {day: '2026-10-18', outcomes: {[id]: 'done'}}, t0 + 24 * H);
+  assert.equal(Q.daySummary(s, '2026-10-18', t0 + 24 * H).completed.length, 1);
+  const gold = s.gold; s = apply(s, 'review.submit', {day: '2026-10-18', outcomes: {[id]: 'done'}}, t0 + 24 * H); assert.equal(s.gold, gold);
+});
+test('planning allocations do not duplicate tasks; capacity remains unset until supplied', () => {
+  let s = task(fresh()), taskId = s.quests[0].id;
+  s = apply(s, 'allocation.save', {taskId, day: '2026-10-18', minutes: 120}); s = apply(s, 'allocation.save', {taskId, day: '2026-10-19', minutes: 60});
+  assert.equal(s.quests.length, 1); assert.equal(s.allocations.length, 2); assert.equal(Q.daySummary(s, '2026-10-18', t0).overCapacity, false);
+  s = apply(s, 'settings.save', {fields: {availability: [1, null, null, null, null, null, null]}}); assert.equal(Q.daySummary(s, '2026-10-18', t0).overCapacity, true);
+});
+test('flexible periods, goal/project links, milestones, standalone tasks and rollups', () => {
+  let s = apply(fresh(), 'entity.save', {group: 'periods', fields: {title: 'Season', start: '2026-10-18', end: '2027-01-16'}}), pid = s.periods[0].id;
+  s = apply(s, 'entity.save', {group: 'goals', fields: {title: 'Learn', success: 'Build system', periodId: pid}}); const gid = s.goals[0].id;
+  s = apply(s, 'entity.save', {group: 'projects', fields: {title: 'Lab', goalId: gid}}); const projectId = s.projects[0].id;
+  s = apply(s, 'entity.save', {group: 'milestones', fields: {title: 'Restore proof', projectId, targetDay: '2026-11-01', done: false}});
+  s = task(s, 'Project task', {projectId, estimateMinutes: 120, milestoneId: s.milestones[0].id}); const tid = last(s, 'quests').id;
+  s = task(s, 'Independent'); assert.equal(last(s, 'quests').projectId, null);
+  s = apply(s, 'log.save', {taskId: tid, day: '2026-10-18', minutes: 180}); const sum = Q.projectSummary(s, projectId, t0);
+  assert.equal(sum.actualMs, 3 * H); assert.equal(sum.overrunMs, H); assert.equal(sum.remainingMs, 0); assert.equal(s.milestones[0].done, false);
+});
+test('backup merge remaps relationships and repeated merges add no records or rewards', () => {
+  let original = task(fresh(), 'Imported'); original = apply(original, 'log.save', {taskId: original.quests[0].id, day: '2026-10-18', minutes: 60}); original = apply(original, 'task.complete', {id: original.quests[0].id});
+  let dest = task(fresh(), 'Existing'); dest = apply(dest, 'import.merge', {data: plain(original)}); const count = dest.quests.length, gold = dest.gold;
+  dest = apply(dest, 'import.merge', {data: plain(original)}); assert.equal(dest.quests.length, count); assert.equal(dest.gold, gold); assert.equal(dest.sessions[0].taskId, dest.quests[1].id);
+});
+test('repeated legacy backup merges are idempotent', () => {
+  const legacy = {version: 2, quests: [{id: 1, title: 'Legacy', status: 'active'}], recurring: [], completed: [], categories: []};
+  let s = apply(fresh(), 'import.merge', {data: legacy}); s = apply(s, 'import.merge', {data: legacy}); assert.equal(s.quests.length, 1);
+});
+test('correcting suspicious historical durations keeps originals and recomputes accepted totals', () => {
+  let s = Q.normalize({version: 2, quests: [], completed: [{title: 'Long', at: t0, ms: 744 * H}], recurring: []}, t0);
+  const id = s.completed[0].id; s = apply(s, 'legacy.correct', {id, minutes: 120}); assert.equal(Q.totalEffort(s, t0), 2 * H); assert.equal(s.completed[0].originalMs, 744 * H);
+});
+test('correcting a completed timer preserves original segments and updates completion effort', () => {
+  let s = task(fresh()), tid = s.quests[0].id; s = apply(s, 'session.start', {taskId: tid, minutes: 60}); s = apply(s, 'task.complete', {id: tid}, t0 + H);
+  s = apply(s, 'session.correct', {id: s.sessions[0].id, day: '2026-10-18', minutes: 15}); assert.equal(Q.totalEffort(s, t0 + H), 15 * MIN); assert.equal(s.completed[0].ms, 15 * MIN); assert.equal(s.sessions[0].originalSession.kind, 'timer');
+});
+test('removing a planned day off restores current occurrences without duplicating them', () => {
+  let s = apply(fresh(), 'routine.save', {fields: {title: 'Daily', repeat: 'daily'}});
+  s = apply(s, 'dayOff.save', {start: '2026-10-18', end: '2026-10-18'});
+  s = apply(s, 'dayOff.delete', {id: s.daysOff[0].id});
+  assert.equal(Q.expected(s, '2026-10-18').length, 1); assert.equal(s.quests.length, 1); assert.equal(s.allocations.length, 1);
+});
+test('future routine forecasts appear in planned capacity without creating future tasks', () => {
+  let s = apply(fresh(), 'routine.save', {fields: {title: 'Daily', repeat: 'daily', estimateMinutes: 30}});
+  assert.equal(s.quests.length, 1); assert.equal(Q.daySummary(s, '2026-10-19', t0).plannedMinutes, 30);
+  s = apply(s, 'dayOff.save', {start: '2026-10-19', end: '2026-10-20'});
+  assert.equal(Q.daySummary(s, '2026-10-19', t0).plannedMinutes, 0);
+});
+test('checklist changes never start a timer or reward a completion', () => {
+  let s = task(fresh(), 'Checklist', {checklist: [{title: 'Inspect', done: false}]});
+  s = apply(s, 'task.check', {id: s.quests[0].id, index: 0, done: true});
+  assert.equal(s.quests[0].checklist[0].done, true); assert.equal(s.sessions.length, 0); assert.equal(s.gold, 0);
+});
+test('creating a completed task logs its reward once', () => {
+  let s = task(fresh(), 'Already done', {status: 'done'});
+  assert.equal(s.completed.length, 1); const gold = s.gold;
+  s = apply(s, 'task.complete', {id: s.quests[0].id}); assert.equal(s.gold, gold);
+});
+test('malformed progression and time entries are rejected instead of risking corrupted totals', () => {
+  const bad = plain(fresh()); bad.xpMax = 0;
+  assert.throws(() => Q.normalize(bad, t0), /xpMax/);
+  const invalid = plain(fresh()); invalid.sessions = [{id: 100, kind: 'timer', status: 'running', limitMs: -1, segments: []}];
+  assert.throws(() => Q.normalize(invalid, t0), /timer/);
+});

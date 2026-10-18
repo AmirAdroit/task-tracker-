@@ -30,11 +30,11 @@ if not exist ".venv\Scripts\python.exe" (
 
 call ".venv\Scripts\activate.bat"
 
-python -c "import PySide6" 1>nul 2>nul
+python -c "import PySide6; assert PySide6.__version__ == '6.11.1'" 1>nul 2>nul
 if errorlevel 1 (
   echo Installing components ^(first run only, about 1-2 minutes^)...
   python -m pip install --upgrade pip >nul 2>nul
-  python -m pip install PySide6
+  python -m pip install -r requirements.txt
   if errorlevel 1 ( echo [!] Install failed. Copy the text above and send it to me. & pause & exit /b 1 )
 )
 
