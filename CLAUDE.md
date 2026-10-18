@@ -8,6 +8,7 @@ QuestHUD is a local Windows planner with a compact RPG HUD and a full panel. Kee
 - `planner-core.js`: pure v4 domain model. `QC.apply(state, {type,payload,requestId?}, now)` returns a new candidate or throws. Never mutate canonical state from a page.
 - `state_service.py`: single owner of canonical state inside QJSEngine, atomic JSON persistence, migration/import backups, scheduler helpers and startup integration.
 - `hud.py`: native windows/tray, QWebChannel, one-second maintenance tick, single-instance guard and graceful quit.
+- `window_geometry.py`: logical-pixel work-area fitting, real-screen selection and eight-edge resize regions. Never multiply QWidget geometry by DPR; preserve the user-selected logical size across `WM_DPICHANGED`/screen events. Use system move/resize and coalesce deferred native geometry changes.
 - `panel.js` / `hud-ui.js` render snapshots; `ui-common.js` provides command-based dialogs. Both load core scripts in order. `panel.css` is shared only by the panel; preserve HUD transparency.
 
 Bridge interface: `load()` returns JSON; `dispatch(commandJson)` returns `{ok,state,error?}`; `dataChanged` prompts reload. `openView(route)`/`navigate` route reviews. Pages cannot call an unrestricted save method. Export reads canonical state. Web previews use the same reducer with localStorage and lack native scheduling.
@@ -44,9 +45,12 @@ node tests/check_syntax.cjs
 node --test tests/core.test.cjs
 .venv\Scripts\python.exe -B -m unittest discover -s tests -p "test_*.py" -v
 .venv\Scripts\python.exe -B tests/smoke_windows.py
+.venv\Scripts\python.exe -B tests/smoke_displays.py
 ```
 
 Install via `run.bat` (Python 3.10–3.14, pinned PySide6). The smoke test needs an interactive Windows desktop and opens real Qt windows. CI covers the first three commands on Windows. Inspect captured synthetic screenshots for layout quality; passing DOM assertions alone does not prove visual quality.
+
+Display regressions must test mixed-DPI transfers, legacy/off-screen geometry recovery, chosen-size persistence, close-button visibility and all edges/corners. Do not change OS display scale settings for tests. The tool-window HUD intentionally stays out of the taskbar; retain tray and keyboard recovery/quit paths.
 
 Update README when features, requirements, state behavior, commands, backup or operation change. Meaningful model changes need boundary/failure tests. Verify migration preserves personal history/rewards and export/import round trips. Report actual Windows/notification/startup verification separately from simulations, and never claim a real reboot test from a simulated clock test.
 

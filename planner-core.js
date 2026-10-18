@@ -267,7 +267,11 @@
       x.originalSession = copy(x); x.kind = 'manual'; x.day = p.day; x.durationMs = number(p.minutes, 0, 1440, 'Corrected minutes') * MIN; x.segments = []; x.note = p.note || ''; break;
     case 'allocation.save':
       q = requireItem(s, 'quests', p.taskId); date(p.day); var amount = number(p.minutes, 1, 1440, 'Planned minutes');
-      x = s.allocations.find(function (a) { return a.taskId === q.id && a.day === p.day; }); if (!x) x = create(s, 'allocations', {taskId: q.id, day: p.day}); x.minutes = amount; break;
+      x = p.id ? requireItem(s, 'allocations', p.id) : s.allocations.find(function (a) { return a.taskId === q.id && a.day === p.day; });
+      if (x && x.routine) assert(x.day === p.day && x.taskId === q.id, 'Routine occurrences keep their scheduled day; edit the routine schedule instead');
+      if (!x) x = create(s, 'allocations', {taskId: q.id, day: p.day});
+      s.allocations = s.allocations.filter(function (a) { return a.id === x.id || a.taskId !== q.id || a.day !== p.day; });
+      x.taskId = q.id; x.day = p.day; x.minutes = amount; break;
     case 'allocation.delete': s.allocations = s.allocations.filter(function (a) { return a.id !== p.id; }); break;
     case 'routine.save':
       f = validateFields(s, 'recurring', p.fields);
@@ -356,7 +360,7 @@
     }
     if (root.QWebChannel && root.qt && root.qt.webChannelTransport) {
       new root.QWebChannel(root.qt.webChannelTransport, function (ch) { var b = ch.objects.bridge;
-        ready({kind: 'bridge', load: function (cb) { b.load(cb); }, dispatch: function (cmd, cb) { cmd.requestId = cmd.requestId || 'ui-' + Date.now() + '-' + Math.random(); b.dispatch(JSON.stringify(cmd), function (r) { if (cb) cb(JSON.parse(r)); }); }, onChange: function (fn) { b.dataChanged.connect(fn); }, onNavigate: function (fn) { b.navigate.connect(fn); b.getRoute(fn); }, setOpacity: function (v) { b.setWindowOpacity(v); }, setZoom: function (v) { b.setZoom(v); }, openPanel: function (tab) { b.openView(tab || 'today'); }, exportData: function () { b.exportData(); }, importData: function (cb) { b.importData(cb); }});
+        ready({kind: 'bridge', load: function (cb) { b.load(cb); }, dispatch: function (cmd, cb) { cmd.requestId = cmd.requestId || 'ui-' + Date.now() + '-' + Math.random(); b.dispatch(JSON.stringify(cmd), function (r) { if (cb) cb(JSON.parse(r)); }); }, onChange: function (fn) { b.dataChanged.connect(fn); }, onNavigate: function (fn) { b.navigate.connect(fn); b.getRoute(fn); }, setOpacity: function (v) { b.setWindowOpacity(v); }, setZoom: function (v) { b.setZoom(v); }, setCollapsed: function (v) { b.setCollapsed(v); }, openPanel: function (tab) { b.openView(tab || 'today'); }, exportData: function () { b.exportData(); }, importData: function (cb) { b.importData(cb); }});
       });
     } else preview();
   }

@@ -2,7 +2,7 @@
   'use strict';
   var U = window.QUI, Q = window.QC, E = Q.esc, B = U.button, content = document.getElementById('content');
   var view = 'today', selectedDay, weekDay, reviewDay = null, periodId = '', questMode = 'list';
-  var filters = {search: '', status: '', cat: '', project: ''}, reviewOpen = false, settingsDirty = false, journalSearch = '';
+  var filters = {search: '', status: '', cat: '', project: ''}, reviewOpen = false, settingsDirty = false, renderedDay = null;
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   function state() { return U.state; }
   function today() { return Q.trackingDay(state()); }
@@ -22,7 +22,7 @@
   }
   function renderToday() {
     var day = today(), sum = Q.daySummary(state(), day, Date.now()), qs = Q.expected(state(), day).filter(function (q) { return q.status !== 'done'; }), pending = Q.pendingReviews(state(), Date.now());
-    return title('Today', day + ' · Your day ends at ' + ('0' + state().settings.dayBoundary).slice(-2) + ':00.', B('task-new', '+ New task') + B('log', 'Log time') + B('review-open', 'Daily check-in')) + (sum.off ? '<div class="card"><h2>☾ ' + E(sum.off.label) + '</h2><p class="hint">Routines and check-in reminders are quiet today. You can still log time manually.</p></div>' : '') + '<div class="metrics">' + metric(sum.plannedMinutes + 'm', 'Planned') + metric(Q.fmtDur(sum.summedMs), 'Summed effort') + metric(Q.fmtDur(sum.uniqueMs), 'Unique timed work') + metric(sum.completed.length, 'Completed') + '</div>' + (sum.overCapacity ? '<p class="warning">Planned effort exceeds your available hours for today.</p>' : '') + '<section class="card"><h2>Sessions</h2>' + U.sessionsHTML() + '</section>' + (pending.length && !reviewOpen ? '<div class="card attention">' + pending.length + ' day(s) waiting for review. ' + B('review-open', 'Review now') + '</div>' : '') + (reviewOpen ? reviewHTML(reviewDay || day) : '') + '<section class="card"><div class="heading"><h2>On your day</h2>' + B('schedule', '+ Schedule task') + '</div>' + (qs.length ? qs.map(function (q) { return taskCard(q); }).join('') : empty('Nothing scheduled. Choose a task for today or start with a manual log.')) + '</section>';
+    return title('Today', day + ' · Your day ends at ' + ('0' + state().settings.dayBoundary).slice(-2) + ':00.', B('task-new', '+ New task') + B('log', 'Log time') + B('review-open', 'Daily check-in')) + (sum.off ? '<div class="card"><h2>☾ ' + E(sum.off.label) + '</h2><p class="hint">Routines and check-in reminders are quiet today. You can still log time manually.</p></div>' : '') + '<div class="metrics" id="today-metrics">' + metric(sum.plannedMinutes + 'm', 'Planned') + metric(Q.fmtDur(sum.summedMs), 'Summed effort') + metric(Q.fmtDur(sum.uniqueMs), 'Unique timed work') + metric(sum.completed.length, 'Completed') + '</div>' + (sum.overCapacity ? '<p class="warning">Planned effort exceeds your available hours for today.</p>' : '') + '<section class="card"><h2>Sessions</h2>' + U.sessionsHTML() + '</section>' + (pending.length && !reviewOpen ? '<div class="card attention">' + pending.length + ' day(s) waiting for review. ' + B('review-open', 'Review now') + '</div>' : '') + (reviewOpen ? reviewHTML(reviewDay || day) : '') + '<section class="card"><div class="heading"><h2>On your day</h2>' + B('schedule', '+ Schedule task') + '</div>' + (qs.length ? qs.map(function (q) { return taskCard(q); }).join('') : empty('Nothing scheduled. Choose a task for today or start with a manual log.')) + '</section>';
   }
   function weekStart(day) { var d = new Date(day + 'T12:00:00'); return Q.shiftDay(day, -((d.getDay() - state().settings.weekStart + 7) % 7)); }
   function renderPlanner() {
@@ -87,7 +87,7 @@
     btn.hidden = !pending.length; btn.textContent = pending.length + ' pending daily review(s)';
     document.getElementById('mode').textContent = U.store.kind === 'bridge' ? 'Saved locally · offline' : 'Browser preview · desktop reminders unavailable';
     if (document.querySelector('dialog[open]') || (background && (settingsDirty || (document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))))) { document.getElementById('update').hidden = false; return; }
-    if (view === 'today' && document.activeElement && document.activeElement.closest('#review-form')) return;
+    renderedDay = today();
     document.getElementById('update').hidden = true;
     document.querySelectorAll('[data-view]').forEach(function (b) { b.classList.toggle('active', b.dataset.view === view); });
     content.innerHTML = ({today: renderToday, planner: renderPlanner, journal: renderJournal, quests: renderQuests, routines: renderRoutines, stats: renderStats, settings: renderSettings}[view])();
@@ -112,7 +112,7 @@
   }
   function scheduleDialog(taskId, day, allocation) {
     var a = allocation || {}, task = Q.find(state(), 'quests', taskId || a.taskId);
-    U.dialog('Schedule effort', U.select('taskId', 'Task', state().quests.filter(function (q) { return !q.archived && q.status !== 'done'; }), taskId || a.taskId, 'Choose a task') + U.field('day', 'Tracking day', day || a.day || today(), 'date', 'required') + U.field('minutes', 'Planned effort (minutes)', a.minutes || (task && task.sessionMinutes) || state().settings.sessionMinutes, 'number', 'min="1" max="1440" required'), function (f, form, d) { U.dispatch('allocation.save', {taskId: Number(f.taskId), day: f.day, minutes: Number(f.minutes)}, function () { d.close(); }); });
+    U.dialog('Schedule effort', U.select('taskId', 'Task', state().quests.filter(function (q) { return !q.archived && q.status !== 'done'; }), taskId || a.taskId, 'Choose a task') + U.field('day', 'Tracking day', day || a.day || today(), 'date', 'required') + U.field('minutes', 'Planned effort (minutes)', a.minutes || (task && task.sessionMinutes) || state().settings.sessionMinutes, 'number', 'min="1" max="1440" required'), function (f, form, d) { U.dispatch('allocation.save', {id: a.id || null, taskId: Number(f.taskId), day: f.day, minutes: Number(f.minutes)}, function () { d.close(); }); });
   }
   function routineDialog(id) {
     var t = id ? Q.find(state(), 'recurring', id) : {repeat: 'daily', diff: 'normal', days: [1], weekday: 1};
@@ -196,5 +196,11 @@
   document.addEventListener('drop', function (e) { var target = e.target.closest('[data-drop-day],[data-drop-status]'); if (!target || !dragged) return; e.preventDefault(); if (target.dataset.dropDay) U.dispatch('allocation.save', {taskId: dragged, day: target.dataset.dropDay, minutes: Q.find(state(), 'quests', dragged).sessionMinutes || state().settings.sessionMinutes}); else if (target.dataset.dropStatus === 'done') U.dispatch('task.complete', {id: dragged}); else U.dispatch('task.edit', {id: dragged, fields: {status: target.dataset.dropStatus}}); dragged = null; });
   document.getElementById('pending').onclick = function () { navigate('review:' + (Q.pendingReviews(state(), Date.now()).slice(-1)[0] || today())); };
   document.getElementById('refresh').onclick = function () { if (document.activeElement) document.activeElement.blur(); render(); };
+  U.onClock = function(){
+    if(!U.state) return;
+    if(renderedDay !== today()){render(true);return;}
+    var nodes=document.querySelectorAll('#today-metrics strong');
+    if(nodes.length===4){var sum=Q.daySummary(state(),today(),Date.now()); [sum.plannedMinutes+'m',Q.fmtDur(sum.summedMs),Q.fmtDur(sum.uniqueMs),sum.completed.length].forEach(function(value,i){nodes[i].textContent=value;});}
+  };
   U.boot(render);
 })();

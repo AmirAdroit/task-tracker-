@@ -18,6 +18,10 @@ run.bat
 
 Launching twice opens the existing installation instead of creating competing writers. The HUD's `–` hides it to the tray. `×` and tray → Quit offer to pause or finish unresolved sessions before quitting. Closing the control panel leaves the HUD running. Exclusive-fullscreen games may cover the HUD; use borderless mode when needed.
 
+The overlay stays out of the taskbar. Drag its top strip to move it, and drag **any edge or corner** to resize it. Monitor changes preserve its chosen size in logical pixels; oversized or disconnected-display geometry is brought inside a real display's usable area. Windows display scaling stays enabled.
+
+If the HUD becomes hard to reach, use tray → **Reset size and position**, **Resize overlay…**, or **Move overlay to display**. The same menu is available by right-clicking its top strip. **Ctrl+Shift+R** resets the focused HUD; **Ctrl+Q** or **Alt+F4** uses graceful quit. Moving to a selected display preserves the chosen size; Reset restores 300×560. Old geometry without the new logical-size setting is migrated once to that safe size.
+
 ## Everyday workflow
 
 1. Create a task in **Quests**. A task can stand alone or belong to a project and optional milestone. Set its total effort estimate and default session length independently of its deadline and difficulty.
@@ -101,9 +105,12 @@ node tests/check_syntax.cjs
 node --test tests/core.test.cjs
 .venv\Scripts\python.exe -B -m unittest discover -s tests -p "test_*.py" -v
 .venv\Scripts\python.exe -B tests/smoke_windows.py
+.venv\Scripts\python.exe -B tests/smoke_displays.py
 ```
 
 The smoke test opens the actual Qt windows using synthetic data under `data/ui-smoke/`, captures screenshots there, and checks QWebChannel synchronization, Persian text, editor preservation, session expiration, planner/journal rendering, routine creation and review drafts. It needs an interactive Windows desktop; CI runs syntax/model/native-service tests. Native tests use isolated data and test startup shortcuts only inside a temporary test folder.
+
+The display smoke test repeatedly transfers an isolated HUD between the connected monitors, tests delayed DPI-inflation recovery, resizing persistence, all eight handles, folding, tray recovery, and quit shortcuts. It records synthetic screenshots and geometry under `data/display-smoke/`. Two differently scaled monitors are needed to exercise a real DPI transition; with one monitor, geometry/unit and simulated-inflation cases still run.
 
 For an isolated manual installation:
 

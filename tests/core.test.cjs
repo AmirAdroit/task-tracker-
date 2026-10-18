@@ -195,3 +195,10 @@ test('malformed progression and time entries are rejected instead of risking cor
   const invalid = plain(fresh()); invalid.sessions = [{id: 100, kind: 'timer', status: 'running', limitMs: -1, segments: []}];
   assert.throws(() => Q.normalize(invalid, t0), /timer/);
 });
+test('editing an allocation moves it instead of leaving a duplicate on the old date', () => {
+  let s = task(fresh()), taskId = s.quests[0].id;
+  s = apply(s, 'allocation.save', {taskId, day:'2026-10-18', minutes:60}); const id=s.allocations[0].id;
+  s = apply(s, 'allocation.save', {taskId, day:'2026-10-19', minutes:90});
+  s = apply(s, 'allocation.save', {id, taskId, day:'2026-10-19', minutes:120});
+  assert.equal(s.allocations.length,1); assert.equal(s.allocations[0].day,'2026-10-19'); assert.equal(s.allocations[0].minutes,120);
+});

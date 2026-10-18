@@ -16,6 +16,7 @@
     var d = document.getElementById('editor');
     if (!d) { d = document.createElement('dialog'); d.id = 'editor'; document.body.appendChild(d); }
     if (d.open) d.close();
+    if (!d.dataset.refreshHook) { d.dataset.refreshHook = '1'; d.addEventListener('close', function () { if(U.render) U.render(true); }); }
     d.innerHTML = '<form id="edit-form"><header><h2>' + Q.esc(title) + '</h2><button type="button" data-cancel aria-label="Close">×</button></header><div class="form-grid">' + body + '</div><p id="form-error" role="alert"></p><footer><button type="button" data-cancel>Cancel</button><button class="primary" type="submit">' + Q.esc(submitLabel || 'Save') + '</button></footer></form>';
     d.querySelectorAll('[data-cancel]').forEach(function (b) { b.onclick = function () { d.close(); }; });
     d.querySelector('form').onsubmit = function (e) { e.preventDefault(); try { save(U.values(e.target), e.target, d); } catch (err) { d.querySelector('#form-error').textContent = err.message; } };
@@ -25,7 +26,7 @@
     U.store.dispatch({type: type, payload: payload || {}}, function (result) {
       if (result.state) U.state = result.state;
       if (!result.ok) { var error = document.getElementById('form-error'); if (error) error.textContent = result.error; U.notice(result.error, true); return; }
-      if (done) done(result.state); if (U.render) U.render();
+      if (done) done(result.state); if (U.render) U.render(type === 'review.save');
     });
   };
   U.start = function (taskId) {
@@ -64,6 +65,7 @@
       if (!U.state) return;
       document.querySelectorAll('[data-session-clock]').forEach(function (el) { var x = Q.find(U.state, 'sessions', Number(el.dataset.sessionClock)); if (x) el.textContent = Q.fmtDur(Q.elapsed(x, Date.now())); });
       document.querySelectorAll('[data-session-remaining]').forEach(function (el) { var x = Q.find(U.state, 'sessions', Number(el.dataset.sessionRemaining)); if (x) el.textContent = Q.fmtDur(Math.max(0, x.limitMs - Q.elapsed(x, Date.now()))); });
+      if (U.onClock) U.onClock();
       if (U.store.kind === 'local') U.store.dispatch({type: 'tick'});
     }, 1000);
   };

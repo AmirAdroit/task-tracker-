@@ -18,8 +18,8 @@
     var key = lenses[lens], day = Q.trackingDay(s), ids = Q.expected(s, day).map(function (q) { return q.id; });
     if (key === 'Sessions') { $('lensCount').textContent = s.sessions.filter(function (x) { return x.kind === 'timer' && x.status !== 'finished'; }).length; $('questList').innerHTML = U.sessionsHTML(); }
     else if (key === 'Done') {
-      var done = s.completed.filter(function (c) { return cat == null || c.cat === cat; }); $('lensCount').textContent = done.length;
-      $('questList').innerHTML = done.slice(-40).reverse().map(function (c) { return '<div class="logitem"><span class="chk">✓</span><span class="lt" dir="auto">' + E(c.title) + '</span><span class="ld">' + (c.timeReview === 'pending' ? 'Review time' : Q.fmtDur(c.ms)) + '</span></div>'; }).join('') || '<p class="empty">No completed quests.</p>';
+      var done = s.completed.filter(function (c) { return cat == null || c.cat === cat; }).sort(function(a,b){return b.at-a.at;}); $('lensCount').textContent = done.length;
+      $('questList').innerHTML = done.slice(0,40).map(function (c) { return '<div class="logitem"><span class="chk">✓</span><span class="lt" dir="auto">' + E(c.title) + '</span><span class="ld">' + (c.timeReview === 'pending' ? 'Review time' : Q.fmtDur(c.ms)) + '</span></div>'; }).join('') || '<p class="empty">No completed quests.</p>';
     } else {
       var list = s.quests.filter(function (q) { return !q.archived && q.status !== 'done' && (cat == null || q.cat === cat) && (key === 'Backlog' ? q.status === 'backlog' : key === 'Today' ? ids.indexOf(q.id) >= 0 || q.pinned || (q.due != null && Q.dueDaysLeft(q.due) <= 0) : q.status !== 'backlog' && (!q.occurrenceDay || q.occurrenceDay === day)); }).sort(Q.byHeat(now));
       $('lensCount').textContent = list.length;
@@ -35,7 +35,7 @@
   $('filterBtn').onclick = function () { filterOpen = !filterOpen; render(); };
   $('catFilter').onclick = function (e) { var b = e.target.closest('[data-cat]'); if (b) { cat = b.dataset.cat ? Number(b.dataset.cat) : null; render(); } };
   $('gearBtn').onclick = function () { $('settings').classList.toggle('open'); };
-  $('collapseBtn').onclick = function () { $('panel').classList.toggle('collapsed'); };
+  $('collapseBtn').onclick = function () { var collapsed = $('panel').classList.toggle('collapsed'); this.textContent = collapsed ? '▸' : '▾'; this.setAttribute('aria-expanded', String(!collapsed)); if(U.store.setCollapsed) U.store.setCollapsed(collapsed); };
   $('openPanelBtn').onclick = function () { U.store.openPanel('today'); };
   $('pendingReview').onclick = function () { U.store.openPanel('review:' + (Q.pendingReviews(U.state, Date.now()).slice(-1)[0] || Q.trackingDay(U.state))); };
   $('solidToggle').onclick = function () { U.dispatch('ui.save', {translucent: U.state.ui.translucent === false}); };

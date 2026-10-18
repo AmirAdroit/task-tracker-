@@ -49,7 +49,7 @@
   .toggle::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;
     background:#fff;transition:.15s;}
   .toggle.on::after{left:20px;}
-  input[type=range]{flex:1;accent-color:var(--accent);}
+  input[type=range]{min-width:0;flex:1;accent-color:var(--accent);}
   .linkbtn{border:1px solid var(--accent);color:var(--accent);background:transparent;border-radius:8px;
     padding:6px 10px;font-size:12px;font-family:inherit;cursor:pointer;width:100%;}
   .linkbtn:hover{background:var(--bg-slab-hi);}
@@ -168,6 +168,20 @@
   .pending-review{font-size:11px;color:#efb477;border:1px solid #766447;border-radius:7px;padding:5px;cursor:pointer;background:transparent;}
   dialog{background:#191c27;color:#ededf2;border:1px solid #6476a8;border-radius:12px;padding:16px;width:calc(100vw - 18px);max-height:95vh;}
   dialog::backdrop{background:#080b14aa}dialog h2{font-size:15px;margin:0}dialog header,dialog footer,.row{display:flex;gap:6px;flex-wrap:wrap;justify-content:space-between;margin-bottom:12px}dialog footer{margin:12px 0 0}dialog label{display:flex;flex-direction:column;gap:5px;margin:10px 0;font-size:12px}dialog input,dialog select,dialog textarea{background:#10131c;border:1px solid #4a536f;border-radius:6px;color:white;padding:6px;max-width:100%;width:100%;font:inherit}dialog button{background:#29324b;color:white;border:1px solid #6476a8;border-radius:6px;padding:5px;cursor:pointer;font:inherit}dialog textarea{min-height:60px}#form-error{color:#ffaaaa}#notice{position:fixed;bottom:10px;left:10px;right:10px;background:#29324b;border:1px solid #8ca4ff;padding:9px;border-radius:7px;z-index:99;font-size:12px}.session{font-size:11px;border-top:1px solid #444;padding:8px 0}.session p{margin:4px 0}.session button{font-size:10px;padding:3px}.session .actions{display:flex;gap:4px;flex-wrap:wrap}.pill{font-size:9px;margin-left:6px;color:#aab8dd}.warning{color:#efb477}.q-title,.q-obj{unicode-bidi:plaintext}button:focus-visible,input:focus-visible{outline:2px solid #8ca4ff}
+
+  .collapsible{display:flex;flex-direction:column;gap:8px;flex:1;min-height:0;overflow:hidden;}
+  .panel{min-width:0;min-height:0;gap:8px;padding:9px 10px;}
+  .head,.bars,.pager,.add{flex-shrink:0;}
+  .scroll.quests{min-height:0;overflow-x:hidden;}
+  .quest,.q-meta,.q-top{min-width:0;}.q-title,.q-obj{overflow-wrap:anywhere;}
+  .q-obj{margin:0;}.add input{min-width:0;}
+  .collapsed .collapsible{display:none;}
+  dialog{max-width:calc(100vw - 12px);max-height:calc(100vh - 12px);overflow:auto;margin:auto;}
+  dialog header{position:sticky;top:-16px;background:#191c27;padding:8px 0;z-index:1;}
+  dialog footer{position:sticky;bottom:-16px;background:#191c27;padding:8px 0;z-index:1;}
+  dialog input,dialog textarea{user-select:text;}
+  @media(max-height:480px){.collapsible>div:has(.ach),.collapsible>div:has(.stats){display:none;}}
+  @media(max-height:350px){.who .sub{font-size:10px;}.avatar{width:30px;height:30px;}.panel{gap:5px;}}
 </style>
 </head>
 <body>
@@ -196,7 +210,7 @@
       <div class="gold-line"><span>◉</span><span class="g" id="gold">0</span><span>gold</span></div>
     </div>
 
-    <div class="collapsible" style="display:flex;flex-direction:column;gap:9px;flex:1;min-height:0;">
+    <div class="collapsible">
       <div class="pager">
         <button class="arrow" id="prevLens" title="Previous">‹</button>
         <div class="lens"><span class="nm" id="lensName">Focus</span><span class="ct" id="lensCount">0</span></div>
