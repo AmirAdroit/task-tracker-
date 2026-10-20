@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const root = path.join(__dirname, '..');
-for (const file of ['quest-core.js', 'planner-core.js', 'ui-common.js', 'panel.js', 'hud-ui.js']) {
+for (const file of ['quest-core.js', 'planner-core.js', 'editor-controller.js', 'ui-common.js', 'panel.js', 'hud-ui.js']) {
   new vm.Script(fs.readFileSync(path.join(root, file), 'utf8'), {filename: file});
 }
 for (const file of ['hud.html', 'panel.html']) {

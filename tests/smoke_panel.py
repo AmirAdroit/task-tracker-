@@ -116,6 +116,7 @@ def field(name,value,event=None):
 
 def close_editor():
     click('dialog[open] [data-cancel]')
+    wait(lambda:js(panel.page,'!document.querySelector("dialog[open]") && !QUI.editor.deferRender()'),'editor closes and restores page focus')
 
 
 def settle(ms=550):
@@ -143,14 +144,14 @@ try:
         click('[data-view=planner]')
         click('[data-action=entity-edit][data-group='+owner_group+'][data-id="'+str(owner_id)+'"]')
         assert js(panel.page,'document.querySelector('+json.dumps('[name='+field_name+']')+').value')==str(id)
-        js(panel.page,'document.querySelector("#edit-form").requestSubmit()')
-        wait(lambda:not js(panel.page,'!!document.querySelector("dialog[open]")'),owner_group+' editor preserves its archived parent association')
+        js(panel.page,'document.querySelector("#edit-form [type=submit]").click()')
+        wait(lambda:js(panel.page,'!document.querySelector("dialog[open]") && !QUI.editor.deferRender()'),owner_group+' editor preserves its archived parent association')
     command('entity.save',{'group':'periods','fields':{'title':'Temporary period','start':'2026-01-01','end':'2026-12-31'}})
     temporary_period=service.snapshot()['periods'][-1]['id'];sync()
     click('[data-view=planner]');field('period-filter',temporary_period,'change')
     wait(lambda:js(panel.page,'!!document.querySelector("[data-action=entity-edit][data-group=periods]")'),'selected period renders its edit action')
     click('[data-action=entity-edit][data-group=periods]');click('[data-action=entity-archive]')
-    wait(lambda:js(panel.page,'!document.querySelector("dialog[open]") && document.querySelector("[name=period-filter]").value===""'),'archiving selected period resets the visible filter consistently')
+    wait(lambda:js(panel.page,'!document.querySelector("dialog[open]") && !QUI.editor.deferRender() && document.querySelector("[name=period-filter]").value===""'),'archiving selected period resets the visible filter consistently')
 
     for group,id in [('periods',period),('goals',goal),('projects',project),('milestones',milestone)]:
         command('entity.archive',{'group':group,'id':id})
@@ -160,8 +161,8 @@ try:
     assert js(panel.page,'document.querySelector("[name=projectId]").value')==str(project)
     assert js(panel.page,'document.querySelector("[name=milestoneId]").value')==str(milestone)
     field('title','Linked task edited')
-    js(panel.page,'document.querySelector("#edit-form").requestSubmit()')
-    wait(lambda:not js(panel.page,'!!document.querySelector("dialog[open]")'),'task editor preserves archived project and milestone associations')
+    js(panel.page,'document.querySelector("#edit-form [type=submit]").click()')
+    wait(lambda:js(panel.page,'!document.querySelector("dialog[open]") && !QUI.editor.deferRender()'),'task editor preserves archived project and milestone associations')
     q=next(q for q in service.snapshot()['quests'] if q['id']==task)
     assert (q['projectId'],q['milestoneId'])==(project,milestone)
     command('task.complete',{'id':task}); sync()
@@ -170,18 +171,18 @@ try:
     click('[data-action=allocation-edit][data-id="'+str(allocation)+'"]')
     assert js(panel.page,'document.querySelector("[name=taskId]").value')==str(task)
     field('minutes','35')
-    js(panel.page,'document.querySelector("#edit-form").requestSubmit()')
+    js(panel.page,'document.querySelector("#edit-form [type=submit]").click()')
     wait(lambda:next(a for a in service.snapshot()['allocations'] if a['id']==allocation)['minutes']==35,'completed-task allocations remain editable')
-    wait(lambda:not js(panel.page,'!!document.querySelector("dialog[open]")'),'allocation editor closes')
+    wait(lambda:js(panel.page,'!document.querySelector("dialog[open]") && !QUI.editor.deferRender()'),'allocation editor closes')
     click('[data-view=settings]')
     field('reviewEvery','77','input')
     click('[data-action=entity-edit][data-group=categories]')
     field('title','Edited category')
-    js(panel.page,'document.querySelector("#edit-form").requestSubmit()')
-    wait(lambda:not js(panel.page,'!!document.querySelector("dialog[open]")'),'category edit completes')
+    js(panel.page,'document.querySelector("#edit-form [type=submit]").click()')
+    wait(lambda:js(panel.page,'!document.querySelector("dialog[open]") && !QUI.editor.deferRender()'),'category edit completes')
     assert js(panel.page,'document.querySelector("[name=reviewEvery]").value')=='77'
     print('PASS: category editing preserves unsaved Settings input',flush=True)
-    js(panel.page,'document.querySelector("#settings-form").requestSubmit()')
+    js(panel.page,'document.querySelector("#settings-form [type=submit]").click()')
     wait(lambda:js(panel.page,'document.getElementById("notice").textContent==="Settings saved"'),'settings draft can be saved afterward')
     click('[data-view=today]')
     js(panel.page,'window.rawDispatch=QUI.store.dispatch;window.delayedReplies=0;QUI.store.dispatch=function(c,cb){rawDispatch(c,function(r){setTimeout(function(){cb(r);delayedReplies++},400)})}')
@@ -190,13 +191,13 @@ try:
             click('[data-view=planner]');click('[data-action=entity-new][data-group=goals]')
         else: click('[data-action=task-new]')
         field('title',title)
-        js(panel.page,'document.querySelector("#edit-form").requestSubmit();document.querySelector("#edit-form").requestSubmit()')
-        wait(lambda:not js(panel.page,'!!document.querySelector("dialog[open]")'),'pending '+title+' form sends one save')
+        js(panel.page,'document.querySelector("#edit-form [type=submit]").click();document.querySelector("#edit-form [type=submit]").click()')
+        wait(lambda:js(panel.page,'!document.querySelector("dialog[open]") && !QUI.editor.deferRender()'),'pending '+title+' form sends one save')
         group='goals' if action=='entity-new' else 'quests'
         assert sum(q['title']==title for q in service.snapshot()[group])==1
     click('[data-view=today]')
     click('[data-action=task-new]');field('title','Older pending task')
-    js(panel.page,'document.querySelector("#edit-form").requestSubmit();document.querySelector("[data-cancel]").click();document.querySelector("[data-action=task-new]").click();document.querySelector("#edit-form [name=title]").value="New unsaved editor"')
+    js(panel.page,'document.querySelector("#edit-form [type=submit]").click();document.querySelector("[data-cancel]").click();document.querySelector("[data-action=task-new]").click();document.querySelector("#edit-form [name=title]").value="New unsaved editor"')
     wait(lambda:any(q['title']=='Older pending task' for q in service.snapshot()['quests']),'older task reaches canonical state')
     command('task.add',{'title':'Newer background task'})
     sync();settle()
@@ -206,7 +207,7 @@ try:
     print('PASS: delayed reply preserves a newer editor and a newer snapshot',flush=True)
     close_editor()
     click('[data-action=task-new]');field('title','   ')
-    js(panel.page,'document.querySelector("#edit-form").requestSubmit();document.querySelector("[data-cancel]").click();document.querySelector("[data-action=task-new]").click();document.querySelector("#edit-form [name=title]").value="Another clean draft"')
+    js(panel.page,'document.querySelector("#edit-form [type=submit]").click();document.querySelector("[data-cancel]").click();document.querySelector("[data-action=task-new]").click();document.querySelector("#edit-form [name=title]").value="Another clean draft"')
     settle()
     assert js(panel.page,'document.querySelector("dialog[open] #form-error").textContent')==''
     assert js(panel.page,'!document.querySelector("dialog[open] [name=title]").disabled')

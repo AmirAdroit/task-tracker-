@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.0.4 — reliable editor keyboard handling
+
+- Centralize editor focus, explicit Save/Ctrl+Enter commits, composition guards, Tab boundaries and close/refresh/focus restoration while retaining the existing dialog interface and style.
+- Focus titles immediately instead of Close, prevent accidental implicit Enter saves, preserve textarea newlines and native dropdown/date/IME keys, and show the save shortcut.
+- Clear obsolete closed-input focus before refreshing; restore the opening control or current heading. Keep drafts and editing focus after failed validation, with existing pending-save and stale-reply protection.
+- Add actual Qt keyboard/IME editor regressions, normal/minimum-size captures and CI keyboard-policy tests; update existing fixtures to activate Save explicitly. No data migration or domain behavior changes.
+
 ## 4.0.3 — control-panel UI stability
 
 - Prevent repeated form submissions and keep delayed replies/errors scoped to their original editor; reject stale UI snapshots.

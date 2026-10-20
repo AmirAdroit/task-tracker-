@@ -16,3 +16,5 @@ dialog #form-error:empty{padding:0}
 .toolbar>label{max-width:100%}
 html{scrollbar-gutter:stable}
 html:has(dialog[open]){overflow:hidden}
+
+kbd{font:inherit;font-size:10px;opacity:.75;margin-left:6px}dialog header h2{min-width:0;overflow-wrap:anywhere}
