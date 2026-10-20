@@ -97,13 +97,15 @@ HUD / panel → QWebChannel commands → StateService → QJSEngine / shared red
 | `hud.py` | Windows, bridge, native scheduler, tray, single-instance guard and quit workflow |
 | `board_reminder.py`, `board_alert.py`, `assets/board-alert.wav` | Transient reminder scheduler, native attention window and original bundled sound |
 | `hud.html`, `hud-ui.js` | Compact overlay |
-| `panel.html`, `panel.css`, `panel.js`, `ui-common.js` | Planner UI and shared dialogs |
+| `panel.html`, `panel.css`, `panel.js`, `ui-common.js`, `editor-controller.js` | Planner UI, commands and shared editor lifecycle |
 | `tests/` | Model tests, native-service tests, syntax checks and isolated Windows UI smoke test |
 | `data/` | Private runtime data, backups, profile/cache and local test artifacts; git-ignored |
 
 Native changes are named commands, not whole-state replacements. The service applies a command to a candidate state, saves atomically, then publishes it. Failed commands/saves preserve the prior state. Recent request IDs prevent duplicate retries. A native scheduler expires sessions even when pages are hidden. UI updates preserve open editors and unsaved settings.
 
 Control-panel editors prevent duplicate submissions while a save is pending. Delayed replies belong to their original editor and cannot close a newer draft or replace a newer snapshot. Editing linked records preserves archived relationships; archived options appear only when already selected. Long editors scroll internally with Save/Cancel visible, and menu/filter changes preserve clicks, keyboard navigation and same-view scroll positions.
+
+Editors focus their first relevant field immediately. **Save or Ctrl+Enter** commits; Enter in ordinary fields does not save, and Enter in text areas inserts a newline. Native dropdown/date keys and Persian input composition remain available. Tab/Shift+Tab stays inside the editor. Escape, Cancel and Close restore focus after refreshing the page; if the original control disappeared, focus goes to the current view's heading. Validation errors retain the draft and return focus to a useful field. Settings also uses Save/Ctrl+Enter. This UI repair does not change the save format or require migration.
 
 ## Data, backups, and upgrades
 
@@ -121,12 +123,13 @@ Settings → Backup exports all planning/tracking data. Import replace/merge mak
 
 ```bat
 node tests/check_syntax.cjs
-node --test tests/core.test.cjs tests/ui.test.cjs
+node --test tests/core.test.cjs tests/ui.test.cjs tests/editor.test.cjs
 .venv\Scripts\python.exe -B -m unittest discover -s tests -p "test_*.py" -v
 .venv\Scripts\python.exe -B tests/smoke_windows.py
 .venv\Scripts\python.exe -B tests/smoke_displays.py
 .venv\Scripts\python.exe -B tests/smoke_accountability.py
 .venv\Scripts\python.exe -B tests/smoke_panel.py
+.venv\Scripts\python.exe -B tests/smoke_keyboard.py
 ```
 
 The smoke test opens the actual Qt windows using synthetic data under `data/ui-smoke/`, captures screenshots there, and checks QWebChannel synchronization, Persian text, editor preservation, session expiration, planner/journal rendering, routine creation and review drafts. It needs an interactive Windows desktop; CI runs syntax/model/native-service tests. Native tests use isolated data and test startup shortcuts only inside a temporary test folder.
@@ -136,6 +139,8 @@ The display smoke test repeatedly transfers an isolated HUD between the connecte
 The accountability smoke test covers conditional recurrence controls, optional rest-day routines/logging, direct day-off removal, reminder settings, real native popup buttons, editor preservation and the Windows sound playback API. Screenshots use synthetic data under `data/accountability-smoke/`. Repeat/snooze/resume timings use injected clocks; these are not physical suspend/reboot or speaker-audibility tests. Use **Test alert** to check sound on your current audio device.
 
 The panel smoke test uses synthetic data under `data/panel-ui-smoke/`. It injects delayed replies, double submits and background changes, exercises repeated task/goal/project editor navigation, archived links and completed-task allocations, and checks real Qt mouse/keyboard filter interactions, small-window layouts and scroll preservation. `tests/ui.test.cjs` covers out-of-order snapshots, form ownership, duplicate-submit protection and recovery after failed saves in CI.
+
+The keyboard smoke test opens the actual Qt editors and types through Qt key events, including immediate multiword titles, punctuation, numbers, selection/deletion, Tab/Shift+Tab, Enter, Ctrl+Enter and Escape. It covers entity/task/routine forms, native dropdown/date controls, textarea newlines, failed-save correction, rapid reopening, delayed replies, background changes, Settings and HUD sessions. It commits Persian text through Qt's input-method API and separately simulates composition event ordering. These are not physical Windows keyboard-layout tests. Normal/minimum-size screenshots remain private under `data/keyboard-smoke/`. `tests/editor.test.cjs` runs keyboard policy and composition guards in CI; native picker/focus assertions require the Windows smoke test.
 
 For an isolated manual installation:
 

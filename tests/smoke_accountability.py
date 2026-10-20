@@ -106,6 +106,10 @@ def value(name, val, change=False):
     if change: code+='el.dispatchEvent(new Event("change",{bubbles:true}));'
     return js(panel.page,code)
 
+
+def editor_closed():
+    wait(lambda:js(panel.page,'!document.querySelector("dialog[open]") && !QUI.editor.deferRender()'),'editor finishes closing before the next action')
+
 try:
     wait(lambda: js(panel.page,'!!(window.QUI && QUI.state && document.querySelector("h1"))'),'accountability panel loads')
     day=service._eval('QC.trackingDay(current,'+str(clock[0])+')').toString()
@@ -121,22 +125,27 @@ try:
     value('repeat','interval',True)
     assert js(panel.page,'document.querySelector("[name=every]").value')=='3'
     value('repeat','daily',True)
-    js(panel.page,'document.querySelector("#edit-form").requestSubmit()')
+    js(panel.page,'document.querySelector("#edit-form [type=submit]").click()')
     wait(lambda:bool(service.snapshot()['recurring']),'daily saves without interval or weekday values')
+    editor_closed()
     rid=service.snapshot()['recurring'][-1]['id']
     assert 'every' not in service.snapshot()['recurring'][-1]
     js(panel.page,'document.querySelector("[data-action=routine-edit]").click()')
     capture(panel,'routine-daily.png')
-    js(panel.page,'document.querySelector("[data-cancel]").click();document.querySelector("[data-view=today]").click()')
+    js(panel.page,'document.querySelector("[data-cancel]").click()')
+    editor_closed()
+    js(panel.page,'document.querySelector("[data-view=today]").click()')
     command('dayOff.save',{'start':day,'end':service._eval('QC.shiftDay('+json.dumps(day)+',2)').toString(),'label':'Rest'})
     wait(lambda:js(panel.page,'!!document.querySelector("[data-action=off-clear-day]")'),'Today offers direct remove day off')
-    js(panel.page,'document.querySelector("[data-action=routine-add-day]").click();document.querySelector("#edit-form").requestSubmit()')
+    js(panel.page,'document.querySelector("[data-action=routine-add-day]").click();document.querySelector("#edit-form [type=submit]").click()')
     wait(lambda:any(q.get('manualOccurrence') for q in service.snapshot()['quests']),'routine can be added explicitly on a day off')
+    editor_closed()
     qid=next(q['id'] for q in service.snapshot()['quests'] if q.get('manualOccurrence'))
     js(panel.page,'document.querySelector('+json.dumps('[data-action=log][data-id="'+str(qid)+'"]')+').click()')
     value('minutes','12')
-    js(panel.page,'document.querySelector("#edit-form").requestSubmit()')
+    js(panel.page,'document.querySelector("#edit-form [type=submit]").click()')
     wait(lambda:any(x.get('taskId')==qid for x in service.snapshot()['sessions']),'off-day routine accepts a manual log')
+    editor_closed()
     capture(panel,'today-off.png')
     js(panel.page,'document.querySelector("[data-action=off-clear-day]").click()')
     wait(lambda:not any(x['start']<=day<=x['end'] for x in service.snapshot()['daysOff']),'single click clears today while keeping rest of period')
@@ -154,7 +163,7 @@ try:
     value('boardHours','2')
     value('boardStart','22:00')
     value('boardEnd','02:00')
-    js(panel.page,'document.querySelector("[name=boardEnabled]").click();document.querySelector("#settings-form").requestSubmit()')
+    js(panel.page,'document.querySelector("[name=boardEnabled]").click();document.querySelector("#settings-form [type=submit]").click()')
     wait(lambda:service.snapshot()['settings']['boardReminder']['enabled'],'interval settings save with overnight active hours')
     assert service.snapshot()['settings']['boardReminder']['intervalMinutes']==120
     capture(panel,'settings-board.png')
@@ -168,7 +177,7 @@ try:
     assert service.path.read_bytes()==before
     controller.window.open_button.click()
     wait(lambda:js(panel.page,'document.querySelector("h1").textContent==="Settings" && document.querySelector("[name=boardHours]").value==="3"'),'Open board preserves unsaved settings')
-    js(panel.page,'document.querySelector("#settings-form").requestSubmit()')
+    js(panel.page,'document.querySelector("#settings-form [type=submit]").click()')
     wait(lambda:service.snapshot()['settings']['boardReminder']['intervalMinutes']==180,'unsaved settings can still be saved')
     controller.test()
     controller.window.snooze_button.click()

@@ -16,23 +16,8 @@
     // QWebChannel replies can arrive after a newer dataChanged snapshot.
     if (!U.state || Number(snapshot.revision || 0) >= Number(U.state.revision || 0)) U.state = snapshot;
   };
-  U.dialog = function (title, body, save, submitLabel) {
-    var previous = document.getElementById('editor');
-    if (previous) { if (previous.open) previous.close(); previous.remove(); }
-    // Each editor owns its DOM. A delayed callback may close only that editor.
-    var d = document.createElement('dialog'); d.id = 'editor'; document.body.appendChild(d);
-    d.addEventListener('close', function () { if (U.render) U.render(true); });
-    d.innerHTML = '<form id="edit-form"><header><h2>' + Q.esc(title) + '</h2><button type="button" data-cancel aria-label="Close">×</button></header><div class="form-grid">' + body + '</div><p id="form-error" role="alert"></p><footer><button type="button" data-cancel>Cancel</button><button class="primary" type="submit">' + Q.esc(submitLabel || 'Save') + '</button></footer></form>';
-    d.querySelectorAll('[data-cancel]').forEach(function (b) { b.onclick = function () { d.close(); }; });
-    d.querySelector('form').onsubmit = function (e) {
-      e.preventDefault(); if (e.target.dataset.pending) return;
-      var previousForm = U.commandForm; U.commandForm = e.target;
-      try { save(U.values(e.target), e.target, d); }
-      catch (err) { d.querySelector('#form-error').textContent = err.message; }
-      finally { U.commandForm = previousForm; }
-    };
-    d.showModal(); return d;
-  };
+  U.editor = window.createQuestEditor(U);
+  U.dialog = U.editor.open;
   U.dispatch = function (type, payload, done) {
     var form = U.commandForm, controls = [];
     if (form) {
@@ -50,7 +35,7 @@
       U.store.dispatch({type: type, payload: payload || {}}, function (result) {
         unlock();
         if (result.state) U.acceptState(result.state);
-        if (!result.ok) { var error = form && form.querySelector('#form-error'); if (error) error.textContent = result.error; U.notice(result.error, true); return; }
+        if (!result.ok) { var error = form && form.querySelector('#form-error'); if (error) error.textContent = result.error; U.notice(result.error, true); if (form && form.questEditor) form.questEditor.rejected(); return; }
         if (done) done(U.state); if (U.render) U.render(type === 'review.save');
       });
     } catch (error) { unlock(); throw error; }
@@ -81,10 +66,15 @@
   };
   U.handleSession = function (b) { var a = b.dataset.action, id = Number(b.dataset.id); if (a === 'start') U.start(id); else if (a === 'extend') U.extend(id); else if (/^session\./.test(a)) U.dispatch(a, {id: id}); else return false; return true; };
   U.boot = function (render) {
-    U.render = render;
+    U.render = function (background) {
+      if (U.editor.deferRender()) return;
+      var focus = background && U.editor.captureFocus();
+      render(background);
+      if (focus) U.editor.restoreFocus(focus, false);
+    };
     Q.makeStore(function (store) {
       U.store = store;
-      function load() { store.load(function (text) { try { U.acceptState(Q.normalize(JSON.parse(text))); render(true); } catch (e) { U.notice('Could not read saved data: ' + e.message, true); } }); }
+      function load() { store.load(function (text) { try { U.acceptState(Q.normalize(JSON.parse(text))); U.render(true); } catch (e) { U.notice('Could not read saved data: ' + e.message, true); } }); }
       load(); store.onChange(load); if (store.onNavigate) store.onNavigate(function (route) { if (U.navigate) U.navigate(route); });
     });
     setInterval(function () {

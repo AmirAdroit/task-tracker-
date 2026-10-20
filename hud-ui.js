@@ -3,6 +3,7 @@
   var U = window.QUI, Q = window.QC, E = Q.esc, $ = function (id) { return document.getElementById(id); };
   var lenses = ['Focus', 'Today', 'Backlog', 'Sessions', 'Done'], lens = 1, cat = null, filterOpen = false;
   function render(background) {
+    if (U.editor.deferRender()) return;
     var s = U.state, now = Date.now(); if (!s) return;
     $('lvl').textContent = s.level; $('gold').textContent = s.gold.toLocaleString(); $('xpval').textContent = s.xp + ' / ' + s.xpMax; $('xpfill').style.width = Math.min(100, s.xp / s.xpMax * 100) + '%';
     $('s-done').textContent = s.completed.length; $('s-time').textContent = Q.fmtDur(Q.totalEffort(s, now));

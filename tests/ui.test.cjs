@@ -7,7 +7,7 @@ const path = require('node:path');
 
 function ui() {
   const context = vm.createContext({window: {QC: {}}, document: {}, setInterval, clearInterval, setTimeout, clearTimeout});
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'ui-common.js'), 'utf8'), context);
+  for (const file of ['editor-controller.js', 'ui-common.js']) vm.runInContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), context);
   const u = context.window.QUI, replies = [];
   u.store = {dispatch(command, callback) { replies.push({command, callback}); }};
   u.notice = () => {};
