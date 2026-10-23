@@ -120,6 +120,11 @@ def type_text(text):
     QTest.keyClicks(panel.view.focusProxy(), text, Qt.NoModifier, 2); settle(35)
 
 
+def viewport_ready():
+    return (abs(js(panel.page, 'innerWidth') * panel.view.zoomFactor() - panel.view.width()) <= 2
+            and abs(js(panel.page, 'innerHeight') * panel.view.zoomFactor() - panel.view.height()) <= 2)
+
+
 def stable_frame():
     # A JS/rAF reply only confirms style restoration, not that Chromium's frame
     # has reached Qt. In hosted offscreen runs the old caret/opacity frame can
@@ -215,7 +220,7 @@ try:
         area = screens[index % len(screens)].availableGeometry()
         panel.move(area.topLeft() + hud.QPoint(12, 12))
         panel.resize(min(1100, area.width() - 24), min(820, area.height() - 24))
-        settle(80)
+        wait(viewport_ready, 'browser viewport matches the resized panel')
         QApplication.setActiveWindow(panel)
         panel.view.setFocus()
         click('[data-view=' + view + ']'); click(selector)
@@ -238,6 +243,7 @@ try:
         press(Qt.Key_Escape)
         wait(lambda: js(panel.page, '!document.querySelector("dialog[open]") && !QUI.editor.deferRender()'), 'stress cycle ' + str(index + 1) + '/' + str(cycles))
     panel.resize(640, 460)
+    wait(lambda: panel.width() == 640 and panel.height() == 460 and viewport_ready(), 'minimum native and browser size synchronized')
     click('[data-view=today]'); click('[data-action=task-new]'); type_text('Minimum size render check')
     comparisons.append(repaint_comparison(cycles))
     capture(panel, 'minimum-native-recovery.png')
