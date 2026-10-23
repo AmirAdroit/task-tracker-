@@ -125,6 +125,21 @@ def viewport_ready():
             and abs(js(panel.page, 'innerHeight') * panel.view.zoomFactor() - panel.view.height()) <= 2)
 
 
+exposure_recoveries = 0
+
+
+def expose_panel():
+    global exposure_recoveries
+    if panel.isMinimized():
+        exposure_recoveries += 1
+        print('FIXTURE: restoring minimized synthetic test window', flush=True)
+        panel.showNormal()
+    panel.raise_()
+    panel.activateWindow()
+    wait(lambda: panel.windowHandle().isExposed() and panel.page.isVisible()
+         and js(panel.page, 'document.visibilityState') == 'visible', 'synthetic browser is exposed')
+
+
 def stable_frame():
     # A JS/rAF reply only confirms style restoration, not that Chromium's frame
     # has reached Qt. In hosted offscreen runs the old caret/opacity frame can
@@ -132,11 +147,20 @@ def stable_frame():
     wait(lambda: js(panel.page, '!QUI.repaintPending'), 'repair styles restored')
     start = unchanged = time.monotonic()
     previous = None
+    blank_reported = False
     while time.monotonic() - start < 5:
+        if panel.isMinimized():
+            expose_panel()
+            previous = None
+            unchanged = time.monotonic()
         settle(80)
         current = panel.view.grab().toImage()
         pixels = (current.size(), bytes(current.constBits()))
         now = time.monotonic()
+        if len(set(pixels[1])) <= 32 and not blank_reported:
+            print('BLANK:', js(panel.page, 'JSON.stringify({visibility:document.visibilityState,opacity:getComputedStyle(document.documentElement).opacity,dialog:!!document.querySelector("dialog[open]"),body:getComputedStyle(document.body).display})'),
+                  app.applicationState(), panel.windowState(), panel.page.isVisible(), flush=True)
+            blank_reported = True
         if pixels != previous:
             previous, unchanged = pixels, now
         elif now - start >= 0.5 and now - unchanged >= 0.35 and len(set(pixels[1])) > 32:
@@ -148,6 +172,7 @@ def stable_frame():
 def repaint_comparison(index):
     # Suppress only the blinking caret while comparing two otherwise identical
     # frames. Keep text, focus borders, editor contents and the page visible.
+    expose_panel()
     print('WINDOW:', app.platformName(), panel.isVisible(), panel.windowHandle().isExposed(), panel.isActiveWindow(), panel.size(), flush=True)
     native = panel.screen().grabWindow(panel.winId(), 0, 0, panel.width(), panel.height())
     if not native.isNull():
@@ -223,6 +248,7 @@ try:
         view, selector = [('today', '[data-action=task-new]'), ('planner', '[data-action=entity-new][data-group=goals]'),
                           ('planner', '[data-action=entity-new][data-group=projects]'), ('routines', '[data-action=routine-new]')][index % 4]
         area = screens[index % len(screens)].availableGeometry()
+        expose_panel()
         panel.move(area.topLeft() + hud.QPoint(12, 12))
         panel.resize(min(1100, area.width() - 24), min(820, area.height() - 24))
         wait(viewport_ready, 'browser viewport matches the resized panel')
@@ -247,6 +273,7 @@ try:
             comparisons.append(repaint_comparison(index))
         press(Qt.Key_Escape)
         wait(lambda: js(panel.page, '!document.querySelector("dialog[open]") && !QUI.editor.deferRender()'), 'stress cycle ' + str(index + 1) + '/' + str(cycles))
+    expose_panel()
     panel.resize(640, 460)
     wait(lambda: panel.width() == 640 and panel.height() == 460 and viewport_ready(), 'minimum native and browser size synchronized')
     click('[data-view=today]'); click('[data-action=task-new]'); type_text('Minimum size render check')
@@ -256,7 +283,7 @@ try:
     assert not errors, errors
     result = {'ok': True, 'mode': hud.RENDERER, 'qtBackend': backend, 'cycles': cycles,
               'screenDprs': [screen.devicePixelRatio() for screen in screens], 'reviewMeasurements': measurements,
-              'frameDifferences': comparisons, 'javascriptErrors': errors}
+              'frameDifferences': comparisons, 'exposureRecoveries': exposure_recoveries, 'javascriptErrors': errors}
     (folder / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
     print(json.dumps(result), flush=True)
 finally:

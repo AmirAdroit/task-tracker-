@@ -6,7 +6,7 @@
 - Complete editor teardown independently of delayed browser close events. Release native browser pages before their shared profile at shutdown.
 - Default to stable software rendering with full raster updates, retain an explicit automatic-graphics comparison, and add native Repair display/recovery controls plus a build/mode report.
 - Add verified app/data restore points, path/hash/size checks, a running-instance guard, pre-rollback safety copies, failed-write reversal and interrupted-restore marker. Code rollback preserves newer task data by default; data recovery is explicit. No domain-model/schema migration.
-- Add rendering/IME/frame stress, headless CI rendering and native rollback/launch drills alongside the existing keyboard, panel, accountability, native and display checks. Report physical-monitor and simulated/offscreen coverage separately.
+- Add rendering/IME/frame stress, headless CI rendering and native rollback/launch drills alongside the existing keyboard, panel, accountability, native and display checks. Require visible, nonblank, settled frames and synchronized viewports; retain synthetic failure screenshots. Report physical-monitor and simulated/offscreen coverage separately.
 
 ## 4.0.4 — reliable editor keyboard handling
 
