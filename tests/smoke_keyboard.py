@@ -9,6 +9,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--enable-transparent-visuals")
 
+from rendering import configure_rendering
+configure_rendering(sys.argv[1:])
+
 from PySide6.QtCore import QEventLoop, QTimer, QSettings, QEvent
 from PySide6.QtWidgets import QApplication
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
@@ -45,6 +48,7 @@ overlay.request_quit = lambda: None
 bridge.collapsedRequested.connect(overlay.set_collapsed)
 overlay.move(30, 30)
 panel.move(360, 40)
+panel.setWindowFlag(hud.Qt.WindowStaysOnTopHint, True)
 panel.show()
 overlay.show()
 
@@ -131,6 +135,8 @@ def closed(label):
 
 
 def open_editor(view, selector, first='title', keyboard=False):
+    QApplication.setActiveWindow(panel)
+    panel.view.setFocus()
     click('[data-view=' + view + ']')
     if keyboard:
         js(panel.page, 'document.querySelector(' + json.dumps(selector) + ').focus()')
@@ -168,10 +174,15 @@ try:
         key(Qt.Key_Home); key(Qt.Key_Delete); key(Qt.Key_End); key(Qt.Key_Backspace)
         assert value('title') == 'bcXY'
         key(Qt.Key_Home); key(Qt.Key_End, Qt.ShiftModifier); typing('Revised 7 ')
+        QApplication.setActiveWindow(panel)
+        panel.view.setFocus()
+        proxy = panel.view.focusProxy()
+        wait(lambda: proxy.hasFocus() and proxy.inputMethodQuery(Qt.ImEnabled)
+             and proxy.inputMethodQuery(Qt.ImSurroundingText) == 'Revised 7 '
+             and proxy.inputMethodQuery(Qt.ImCursorPosition) == len('Revised 7 '), group + ': native IME state matches the edited text')
         event = QInputMethodEvent(); event.setCommitString(persian)
         QApplication.sendEvent(panel.view.focusProxy(), event)
-        settle(25)
-        assert value('title') == 'Revised 7 ' + persian
+        wait(lambda: value('title') == 'Revised 7 ' + persian, group + ': Qt IME commit arrives')
         assert service.snapshot() == baseline
         # The first/last boundary wraps without escaping; interior date segments stay native.
         js(panel.page, 'document.querySelector("dialog [type=submit]").focus()')

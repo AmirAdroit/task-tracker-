@@ -17,3 +17,22 @@ jobs:
       - run: node tests/check_syntax.cjs
       - run: node --test tests/core.test.cjs tests/ui.test.cjs tests/editor.test.cjs
       - run: python -B -m unittest discover -s tests -p "test_*.py" -v
+      - name: Software rendering regression (offscreen Qt)
+        run: python -B tests/smoke_rendering.py
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QUESTHUD_SOAK_CYCLES: '4'
+      - name: Isolated rollback and native launch
+        run: python -B tests/smoke_recovery.py
+        env:
+          QT_QPA_PLATFORM: offscreen
+      - name: Synthetic rendering failure frames
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-rendering-frames
+          path: |
+            data/rendering-smoke-software/*.png
+            data/rendering-smoke-software/results.json
+          if-no-files-found: ignore
+          retention-days: 7

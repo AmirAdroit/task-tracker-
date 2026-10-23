@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.0.5 — rendering stability and recoverable rollback
+
+- Retain unchanged header/HUD DOM, deduplicate repeated snapshot notifications, and leave surviving focused fields/IME selection untouched during review autosaves. A reproduced 144-character entry previously caused 288 header rebuilds and 288 range resets; the repaired path causes zero of either. Preserve the heading focus anchor across late updates after archiving.
+- Complete editor teardown independently of delayed browser close events. Release native browser pages before their shared profile at shutdown.
+- Default to stable software rendering with full raster updates, retain an explicit automatic-graphics comparison, and add native Repair display/recovery controls plus a build/mode report.
+- Add verified app/data restore points, path/hash/size checks, a running-instance guard, pre-rollback safety copies, failed-write reversal and interrupted-restore marker. Code rollback preserves newer task data by default; data recovery is explicit. No domain-model/schema migration.
+- Add rendering/IME/frame stress, headless CI rendering and native rollback/launch drills alongside the existing keyboard, panel, accountability, native and display checks. Require visible, nonblank, settled frames and synchronized viewports; retain synthetic failure screenshots. Report physical-monitor and simulated/offscreen coverage separately.
+
 ## 4.0.4 — reliable editor keyboard handling
 
 - Centralize editor focus, explicit Save/Ctrl+Enter commits, composition guards, Tab boundaries and close/refresh/focus restoration while retaining the existing dialog interface and style.

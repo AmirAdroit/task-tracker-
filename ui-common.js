@@ -3,6 +3,27 @@
   'use strict';
   var U = window.QUI = {}, Q = window.QC;
   U.esc = Q.esc;
+  U.text = function (el, value) { value = String(value); if (el.textContent !== value) el.textContent = value; };
+  U.html = function (el, value) { if (el.questMarkup !== value) { el.innerHTML = value; el.questMarkup = value; } };
+  U.repaintPending = false;
+  U.repaint = function () {
+    if (U.repaintPending) return;
+    U.repaintPending = true;
+    var token = {}; U.repaintToken = token;
+    var root = document.documentElement, value = root.style.getPropertyValue('opacity'), priority = root.style.getPropertyPriority('opacity');
+    // Request fresh Chromium frames instead of painting over a GPU-backed Qt
+    // surface with QWidget.repaint(), which can leave that surface blank.
+    root.style.setProperty('opacity', '0.999', 'important');
+    function restore() {
+      if (U.repaintToken !== token) return;
+      clearTimeout(timer);
+      if (value) root.style.setProperty('opacity', value, priority); else root.style.removeProperty('opacity');
+      U.repaintPending = false;
+      U.repaintToken = null;
+    }
+    var timer = setTimeout(restore, 250); // Restore even if frames are suspended.
+    requestAnimationFrame(function () { requestAnimationFrame(restore); });
+  };
   U.field = function (name, label, value, type, extra) { return '<label>' + Q.esc(label) + '<input name="' + name + '" type="' + (type || 'text') + '" value="' + Q.esc(value == null ? '' : value) + '" ' + (extra || '') + '></label>'; };
   U.area = function (name, label, value) { return '<label>' + Q.esc(label) + '<textarea name="' + name + '" dir="auto">' + Q.esc(value || '') + '</textarea></label>'; };
   U.select = function (name, label, items, selected, empty) { return '<label>' + Q.esc(label) + '<select name="' + name + '">' + (empty == null ? '' : '<option value="">' + Q.esc(empty) + '</option>') + items.map(function (x) { var id = x.id == null ? x.value : x.id; return '<option value="' + Q.esc(id) + '"' + (String(id) === String(selected) ? ' selected' : '') + '>' + Q.esc(x.title || x.name || x.label) + '</option>'; }).join('') + '</select></label>'; };
@@ -74,7 +95,14 @@
     };
     Q.makeStore(function (store) {
       U.store = store;
-      function load() { store.load(function (text) { try { U.acceptState(Q.normalize(JSON.parse(text))); U.render(true); } catch (e) { U.notice('Could not read saved data: ' + e.message, true); } }); }
+      function load() { store.load(function (text) { try {
+        var snapshot = Q.normalize(JSON.parse(text));
+        var changed = !U.state || Number(snapshot.revision || 0) > Number(U.state.revision || 0);
+        U.acceptState(snapshot);
+        // A command reply and its dataChanged load can describe the same write.
+        // Render once; duplicate/stale loads must not replace the page again.
+        if (changed) U.render(true);
+      } catch (e) { U.notice('Could not read saved data: ' + e.message, true); } }); }
       load(); store.onChange(load); if (store.onNavigate) store.onNavigate(function (route) { if (U.navigate) U.navigate(route); });
     });
     setInterval(function () {

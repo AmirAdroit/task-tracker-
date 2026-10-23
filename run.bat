@@ -43,7 +43,7 @@ echo Starting Quest HUD...
 echo ^(This window can stay minimized. Closing it stops the HUD.^)
 echo For silent daily use, double-click start-hud.vbs instead.
 echo.
-python hud.py
+python hud.py %*
 if errorlevel 1 (
   echo.
   echo [!] Something went wrong above. Copy the error text and send it to me.

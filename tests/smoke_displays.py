@@ -8,6 +8,9 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault('QTWEBENGINE_CHROMIUM_FLAGS', '--enable-transparent-visuals')
+from rendering import configure_rendering
+configure_rendering(sys.argv[1:])
+
 from PySide6.QtCore import QEventLoop, QTimer, QSettings, QEvent, QPoint, QSize
 from PySide6.QtWidgets import QApplication
 from PySide6.QtWebEngineCore import QWebEngineProfile
@@ -55,7 +58,10 @@ try:
         assert window.size() == QSize(300, 560), (window.size(), window._preferred_size)
         assert_controls()
         rows.append({'screen': window.screen().name(), 'dpr': window.devicePixelRatioF(), 'size': [window.width(), window.height()]})
-    print('PASS: 12 physical display transfers keep 300x560 logical pixels and visible close controls', flush=True)
+    if len(screens) > 1:
+        print('PASS: 12 physical display transfers keep 300x560 logical pixels and visible close controls', flush=True)
+    else:
+        print('PASS: 12 single-screen placements keep size and close controls; a second physical display is unavailable', flush=True)
     window._moving = True
     window._dpi_transition = True
     window.resize(1013, 1890)
