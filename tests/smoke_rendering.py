@@ -139,15 +139,19 @@ def stable_frame():
         now = time.monotonic()
         if pixels != previous:
             previous, unchanged = pixels, now
-        elif now - start >= 0.5 and now - unchanged >= 0.35:
+        elif now - start >= 0.5 and now - unchanged >= 0.35 and len(set(pixels[1])) > 32:
             return current
     current.save(str(folder / 'unstable-frame.png'))
-    raise AssertionError('Chromium/Qt pixels did not settle within five seconds')
+    raise AssertionError('Chromium/Qt frame was blank or did not settle within five seconds')
 
 
 def repaint_comparison(index):
     # Suppress only the blinking caret while comparing two otherwise identical
     # frames. Keep text, focus borders, editor contents and the page visible.
+    print('WINDOW:', app.platformName(), panel.isVisible(), panel.windowHandle().isExposed(), panel.isActiveWindow(), panel.size(), flush=True)
+    native = panel.screen().grabWindow(panel.winId(), 0, 0, panel.width(), panel.height())
+    if not native.isNull():
+        native.save(str(folder / 'native-before-capture.png'))
     js(panel.page, 'window.caretRule=document.createElement("style");caretRule.textContent="input,textarea{caret-color:transparent!important}";document.head.append(caretRule)')
     before = stable_frame()
     before_state = js(panel.page, 'JSON.stringify({pending:QUI.repaintPending,opacity:document.documentElement.style.opacity,width:innerWidth,height:innerHeight,focus:document.activeElement.name})')
@@ -160,7 +164,8 @@ def repaint_comparison(index):
     before.save(str(folder / 'comparison-before.png'))
     after.save(str(folder / 'comparison-after.png'))
     print('FRAME:', json.dumps({'index': index, 'before': json.loads(before_state),
-                               'after': json.loads(after_state), 'difference': differences}), flush=True)
+                               'after': json.loads(after_state), 'difference': differences,
+                               'channelValues': [len(set(a)), len(set(b))]}), flush=True)
     assert differences < 0.002, ('frame changed outside the hidden caret', differences)
     assert after.save(str(folder / ('frame-' + str(index) + '.png')))
     js(panel.page, 'caretRule.remove()')
@@ -255,6 +260,9 @@ try:
     (folder / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
     print(json.dumps(result), flush=True)
 finally:
+    native = panel.screen().grabWindow(panel.winId(), 0, 0, panel.width(), panel.height())
+    if not native.isNull():
+        native.save(str(folder / 'native-after-capture.png'))
     panel.close(); overlay.hide(); overlay.tray.hide()
     panel.deleteLater(); overlay.deleteLater(); app.sendPostedEvents(None, QEvent.DeferredDelete)
     profile.deleteLater(); app.sendPostedEvents(None, QEvent.DeferredDelete)
