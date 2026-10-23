@@ -125,16 +125,20 @@ def repaint_comparison(index):
     # frames. Keep text, focus borders, editor contents and the page visible.
     js(panel.page, 'window.caretRule=document.createElement("style");caretRule.textContent="input,textarea{caret-color:transparent!important}";document.head.append(caretRule)')
     settle(120)
+    before_state = js(panel.page, 'JSON.stringify({pending:QUI.repaintPending,opacity:document.documentElement.style.opacity,width:innerWidth,height:innerHeight,focus:document.activeElement.name})')
     before = panel.view.grab().toImage()
     panel.repair_display()
     wait(lambda: js(panel.page, '!QUI.repaintPending'), 'repair frame completes')
     settle(120)
+    after_state = js(panel.page, 'JSON.stringify({pending:QUI.repaintPending,opacity:document.documentElement.style.opacity,width:innerWidth,height:innerHeight,focus:document.activeElement.name})')
     after = panel.view.grab().toImage()
     assert before.size() == after.size()
     a, b = bytes(before.constBits()), bytes(after.constBits())
     differences = sum(x != y for x, y in zip(a, b)) / max(1, len(a)) if a != b else 0
     before.save(str(folder / 'comparison-before.png'))
     after.save(str(folder / 'comparison-after.png'))
+    print('FRAME:', json.dumps({'index': index, 'before': json.loads(before_state),
+                               'after': json.loads(after_state), 'difference': differences}), flush=True)
     assert differences < 0.002, ('frame changed outside the hidden caret', differences)
     assert after.save(str(folder / ('frame-' + str(index) + '.png')))
     js(panel.page, 'caretRule.remove()')

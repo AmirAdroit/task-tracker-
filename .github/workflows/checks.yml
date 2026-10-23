@@ -26,3 +26,13 @@ jobs:
         run: python -B tests/smoke_recovery.py
         env:
           QT_QPA_PLATFORM: offscreen
+      - name: Synthetic rendering failure frames
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-rendering-frames
+          path: |
+            data/rendering-smoke-software/*.png
+            data/rendering-smoke-software/results.json
+          if-no-files-found: ignore
+          retention-days: 7
