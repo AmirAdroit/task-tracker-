@@ -10,14 +10,15 @@ import hashlib
 import ctypes
 from pathlib import Path
 
-# Must be set BEFORE QtWebEngine is imported so the overlay can be transparent.
-os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--enable-transparent-visuals")
+# Both Chromium and Qt's scene graph must be configured before Qt is initialized.
+from rendering import configure_rendering
+RENDERER = configure_rendering(sys.argv[1:])
 
 try:
     from PySide6.QtCore import Qt, QUrl, QSettings, QObject, Signal, Slot, QTimer, QEvent, QPoint, QRect, QSize
     from PySide6.QtNetwork import QLocalServer, QLocalSocket
     from PySide6.QtGui import (QGuiApplication, QIcon, QPixmap, QPainter,
-                               QColor, QAction, QPainterPath, QCursor, QShortcut, QKeySequence)
+                               QColor, QAction, QPainterPath, QCursor, QShortcut, QKeySequence, QDesktopServices)
     from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
                                    QPushButton, QLabel, QSystemTrayIcon, QMenu, QFileDialog,
                                    QMessageBox, QDialog, QSpinBox, QDialogButtonBox, QFormLayout)
@@ -31,6 +32,9 @@ except ImportError:
     raise
 
 BASE = os.path.dirname(os.path.abspath(__file__))
+UI_BUILD = hashlib.sha256(b''.join(Path(BASE, name).read_bytes() for name in (
+    'hud.py', 'rendering.py', 'hud.html', 'hud-ui.js', 'panel.html', 'panel.css',
+    'panel.js', 'ui-common.js', 'editor-controller.js'))).hexdigest()[:12]
 HUD_HTML = os.path.join(BASE, "hud.html")
 PANEL_HTML = os.path.join(BASE, "panel.html")
 DATA = os.environ.get("QUESTHUD_DATA_DIR", os.path.join(BASE, "data"))
@@ -570,16 +574,64 @@ class Panel(QWidget):
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
+        tools = QHBoxLayout()
+        tools.setContentsMargins(10, 5, 10, 5)
+        self.render_status = QLabel('Stable display' if RENDERER == 'software' else 'Automatic display')
+        tools.addWidget(self.render_status)
+        tools.addStretch()
+        self.repair_button = QPushButton('Repair display')
+        self.repair_button.setFocusPolicy(Qt.NoFocus)
+        self.repair_button.setToolTip('Redraw this window without reloading or discarding text (Ctrl+Shift+R)')
+        self.repair_button.clicked.connect(self.repair_display)
+        tools.addWidget(self.repair_button)
+        recovery_button = QPushButton('Recovery')
+        recovery_menu = QMenu(recovery_button)
+        recovery_menu.addAction('Create restore point', self.create_restore_point)
+        recovery_menu.addAction('Open recovery folder', self.open_recovery_folder)
+        recovery_menu.addAction('Display details', self.display_details)
+        recovery_button.setMenu(recovery_menu)
+        tools.addWidget(recovery_button)
+        lay.addLayout(tools)
         self.view = QWebEngineView(self)
         self.page = QWebEnginePage(profile, self.view)
         self.view.setPage(self.page)
         self._channel = attach_channel(self.page, bridge)
         self.page.load(QUrl.fromLocalFile(PANEL_HTML))
         lay.addWidget(self.view)
+        self.bridge = bridge
+        self._repair_shortcut = QShortcut(QKeySequence('Ctrl+Shift+R'), self)
+        self._repair_shortcut.activated.connect(self.repair_display)
+        self.setObjectName('controlPanel')
+        self.setStyleSheet('#controlPanel{background:#15171f;color:#e9ebf5}QLabel{color:#a2a9bf}QPushButton{padding:4px 9px;background:#232737;color:#e9ebf5;border:1px solid #354365;border-radius:5px}QMenu{background:#191b24;color:#e9ebf5}')
 
         geo = QSettings("QuestHUD", "panel").value("geometry")
         if geo is not None:
             self.restoreGeometry(geo)
+
+    def repair_display(self):
+        # Ask Chromium for fresh frames. QWidget.repaint() can clear the shared
+        # GPU surface without obtaining a new frame in automatic graphics mode.
+        # Keep the viewport, focus, editor DOM and all task state unchanged.
+        self.page.runJavaScript('if(window.QUI && QUI.repaint) QUI.repaint();')
+
+    def create_restore_point(self):
+        from recovery import create_restore_point
+        try:
+            path = create_restore_point(Path(BASE), self.bridge.service.path.parent)
+            QMessageBox.information(self, 'Recovery copy saved', str(path) + '\n\nIncludes verified app files and task data. Code rollback keeps newer task data by default.')
+        except Exception as error:
+            QMessageBox.warning(self, 'Could not create recovery copy', str(error))
+
+    def open_recovery_folder(self):
+        folder = self.bridge.service.path.parent / 'recovery'
+        folder.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+
+    def display_details(self):
+        from PySide6 import __version__
+        from PySide6.QtQuick import QQuickWindow
+        QMessageBox.information(self, 'Display details',
+            f'Renderer: {RENDERER}\nQt Quick backend: {QQuickWindow.sceneGraphBackend()}\nPySide6: {__version__}\nUI build at launch: {UI_BUILD}\n\nStable display uses software rendering and full-frame updates. Repair display preserves the page and text. Rendering mode changes require quitting from the tray and relaunching.')
 
     def _icon(self):
         pm = QPixmap(32, 32)
@@ -597,10 +649,26 @@ class Panel(QWidget):
         super().closeEvent(e)
 
 
+def release_webengine(app, profile, windows):
+    """Destroy pages before their profile, before Python/Qt interpreter teardown."""
+    for window in windows:
+        if window is not None:
+            window.hide()
+            if hasattr(window, 'tray'):
+                window.tray.hide()
+            window.deleteLater()
+    app.sendPostedEvents(None, QEvent.DeferredDelete)
+    profile.deleteLater()
+    app.sendPostedEvents(None, QEvent.DeferredDelete)
+
+
 def main():
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     os.makedirs(DATA, exist_ok=True)
+    if Path(DATA, 'recovery-in-progress.json').exists():
+        QMessageBox.critical(None, 'Finish recovery first', 'An interrupted rollback needs to be completed. Run recovery.py restore with the restore point recorded in data/recovery-in-progress.json. Your task data has not been reset.')
+        return
 
     # One writer per data directory, including test installations.
     identity = "questhud-" + hashlib.sha256(os.path.abspath(DATA).lower().encode()).hexdigest()[:20]
@@ -704,7 +772,12 @@ def main():
 
     # keep references alive
     app._questhud = (profile, bridge, hud, holder, service, timer, server, board_alert)
-    sys.exit(app.exec())
+    code = app.exec()
+    timer.stop()
+    release_webengine(app, profile, [holder['panel'], hud, board_alert.window])
+    server.close()
+    app._questhud = ()
+    sys.exit(code)
 
 
 if __name__ == "__main__":

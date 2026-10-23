@@ -9,6 +9,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--enable-transparent-visuals")
 
+from rendering import configure_rendering
+configure_rendering(sys.argv[1:])
+
 from PySide6.QtCore import QEventLoop, QTimer, QSettings, QEvent
 from PySide6.QtWidgets import QApplication
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
@@ -165,6 +168,7 @@ try:
     wait(lambda: js(panel.page, '!document.querySelector("dialog[open]") && document.getElementById("update").hidden'), 'cancelling an editor applies deferred background updates')
     overlay.resize(240, 320)
     QTimer.singleShot(0, lambda: None)
+    wait(lambda: abs(js(overlay.page, 'innerWidth') * overlay.view.zoomFactor() - overlay.view.width()) <= 2, 'compact HUD browser viewport matches the resized native view')
     wait(lambda: js(overlay.page, 'document.getElementById("addBtn").getBoundingClientRect().right <= innerWidth && document.getElementById("addBtn").getBoundingClientRect().bottom <= innerHeight'), 'compact HUD keeps add controls inside its viewport')
     js(overlay.page, 'document.getElementById("collapseBtn").click()')
     wait(lambda: overlay.height() == 156 and js(overlay.page, 'getComputedStyle(document.querySelector(".collapsible")).display === "none"'), 'HUD collapse hides content and shrinks the native window')

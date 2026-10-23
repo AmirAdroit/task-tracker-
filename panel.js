@@ -8,7 +8,7 @@
   function state() { return U.state; }
   function today() { return Q.trackingDay(state()); }
   function empty(message) { return '<p class="empty">' + E(message) + '</p>'; }
-  function title(name, sub, actions) { return '<div class="heading"><div><h1>' + E(name) + '</h1><p class="subtitle">' + E(sub || '') + '</p></div><div class="actions">' + (actions || '') + '</div></div>'; }
+  function title(name, sub, actions) { return '<div class="heading"><div><h1 id="view-heading" tabindex="-1">' + E(name) + '</h1><p class="subtitle">' + E(sub || '') + '</p></div><div class="actions">' + (actions || '') + '</div></div>'; }
   function metric(value, label) { return '<div class="metric"><strong>' + E(value) + '</strong><small>' + E(label) + '</small></div>'; }
   function name(group, id) { var x = Q.find(state(), group, id); return x ? x.title || x.name : ''; }
   function active(group) { return state()[group].filter(function (x) { return !x.archived; }); }
@@ -93,9 +93,9 @@
     if (U.editor.deferRender()) return;
     if (!U.state) return;
     var s = state(), pending = Q.pendingReviews(s, Date.now()), btn = document.getElementById('pending');
-    document.getElementById('character').innerHTML = '<b>Level ' + s.level + '</b> · ' + s.gold + ' gold<progress value="' + s.xp + '" max="' + s.xpMax + '"></progress><small>' + s.xp + ' / ' + s.xpMax + ' XP</small>';
-    btn.hidden = !pending.length; btn.textContent = pending.length + ' pending daily review(s)';
-    document.getElementById('mode').textContent = U.store.kind === 'bridge' ? 'Saved locally · offline' : 'Browser preview · desktop reminders unavailable';
+    U.html(document.getElementById('character'), '<b>Level ' + s.level + '</b> · ' + s.gold + ' gold<progress value="' + s.xp + '" max="' + s.xpMax + '"></progress><small>' + s.xp + ' / ' + s.xpMax + ' XP</small>');
+    btn.hidden = !pending.length; U.text(btn, pending.length + ' pending daily review(s)');
+    U.text(document.getElementById('mode'), U.store.kind === 'bridge' ? 'Saved locally · offline' : 'Browser preview · desktop reminders unavailable');
     if (document.querySelector('dialog[open]') || (view === 'settings' && settingsDirty) || (background && document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))) { document.getElementById('update').hidden = false; return; }
     var sameView = renderedView === view, top = window.scrollY;
     var scrollers = Array.from(content.querySelectorAll('.board,.week,.table-wrap')).map(function (el) { return [el.scrollLeft, el.scrollTop]; });

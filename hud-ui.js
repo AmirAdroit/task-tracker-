@@ -5,31 +5,31 @@
   function render(background) {
     if (U.editor.deferRender()) return;
     var s = U.state, now = Date.now(); if (!s) return;
-    $('lvl').textContent = s.level; $('gold').textContent = s.gold.toLocaleString(); $('xpval').textContent = s.xp + ' / ' + s.xpMax; $('xpfill').style.width = Math.min(100, s.xp / s.xpMax * 100) + '%';
-    $('s-done').textContent = s.completed.length; $('s-time').textContent = Q.fmtDur(Q.totalEffort(s, now));
-    var pending = Q.pendingReviews(s, now); $('pendingReview').hidden = !pending.length; $('pendingReview').textContent = pending.length + ' day(s) waiting for check-in ↗';
+    U.text($('lvl'), s.level); U.text($('gold'), s.gold.toLocaleString()); U.text($('xpval'), s.xp + ' / ' + s.xpMax); $('xpfill').style.width = Math.min(100, s.xp / s.xpMax * 100) + '%';
+    U.text($('s-done'), s.completed.length); U.text($('s-time'), Q.fmtDur(Q.totalEffort(s, now)));
+    var pending = Q.pendingReviews(s, now); $('pendingReview').hidden = !pending.length; U.text($('pendingReview'), pending.length + ' day(s) waiting for check-in ↗');
     $('panel').classList.toggle('solid', s.ui.translucent === false); $('solidToggle').classList.toggle('on', s.ui.translucent === false);
     if (!background) { $('opacity').value = Math.round((s.ui.opacity || 1) * 100); $('scale').value = Math.round((s.ui.hudScale || 1) * 100); }
     $('opval').textContent = Math.round((s.ui.opacity || 1) * 100) + '%'; $('scaleval').textContent = Math.round((s.ui.hudScale || 1) * 100) + '%';
     U.store.setOpacity(s.ui.opacity || 1); U.store.setZoom(s.ui.hudScale || 1);
-    $('lensName').textContent = lenses[lens]; $('lensDots').innerHTML = lenses.map(function (v, i) { return '<span class="' + (i === lens ? 'on' : '') + '"></span>'; }).join('');
+    $('lensName').textContent = lenses[lens]; U.html($('lensDots'), lenses.map(function (v, i) { return '<span class="' + (i === lens ? 'on' : '') + '"></span>'; }).join(''));
     $('catFilter').classList.toggle('open', filterOpen); $('filterBtn').classList.toggle('on', cat != null);
-    $('catFilter').innerHTML = '<button class="catchip" data-cat="">All</button>' + s.categories.map(function (c) { return '<button class="catchip' + (cat === c.id ? ' on' : '') + '" data-cat="' + c.id + '">' + E(c.name) + '</button>'; }).join('');
+    U.html($('catFilter'), '<button class="catchip" data-cat="">All</button>' + s.categories.map(function (c) { return '<button class="catchip' + (cat === c.id ? ' on' : '') + '" data-cat="' + c.id + '">' + E(c.name) + '</button>'; }).join(''));
     if (document.querySelector('dialog[open]')) return;
     var key = lenses[lens], day = Q.trackingDay(s), ids = Q.expected(s, day).map(function (q) { return q.id; });
-    if (key === 'Sessions') { $('lensCount').textContent = s.sessions.filter(function (x) { return x.kind === 'timer' && x.status !== 'finished'; }).length; $('questList').innerHTML = U.sessionsHTML(); }
+    if (key === 'Sessions') { $('lensCount').textContent = s.sessions.filter(function (x) { return x.kind === 'timer' && x.status !== 'finished'; }).length; U.html($('questList'), U.sessionsHTML()); }
     else if (key === 'Done') {
       var done = s.completed.filter(function (c) { return cat == null || c.cat === cat; }).sort(function(a,b){return b.at-a.at;}); $('lensCount').textContent = done.length;
-      $('questList').innerHTML = done.slice(0,40).map(function (c) { return '<div class="logitem"><span class="chk">✓</span><span class="lt" dir="auto">' + E(c.title) + '</span><span class="ld">' + (c.timeReview === 'pending' ? 'Review time' : Q.fmtDur(c.ms)) + '</span></div>'; }).join('') || '<p class="empty">No completed quests.</p>';
+      U.html($('questList'), done.slice(0,40).map(function (c) { return '<div class="logitem"><span class="chk">✓</span><span class="lt" dir="auto">' + E(c.title) + '</span><span class="ld">' + (c.timeReview === 'pending' ? 'Review time' : Q.fmtDur(c.ms)) + '</span></div>'; }).join('') || '<p class="empty">No completed quests.</p>');
     } else {
       var list = s.quests.filter(function (q) { return !q.archived && q.status !== 'done' && (cat == null || q.cat === cat) && (key === 'Backlog' ? q.status === 'backlog' : key === 'Today' ? ids.indexOf(q.id) >= 0 || q.pinned || (q.due != null && Q.dueDaysLeft(q.due) <= 0) : q.status !== 'backlog' && (!q.occurrenceDay || q.occurrenceDay === day)); }).sort(Q.byHeat(now));
       $('lensCount').textContent = list.length;
-      $('questList').innerHTML = list.map(function (q) {
+      U.html($('questList'), list.map(function (q) {
         var sessions = s.sessions.filter(function (x) { return x.taskId === q.id && x.kind === 'timer' && x.status !== 'finished'; });
         return '<article class="quest" style="--u:' + Q.urgencyColor(q) + '"><div class="q-top"><b class="q-title" dir="auto">' + E(q.title) + '</b>' + (q.due ? '<small>' + E(Q.fmtDue(q.due)) + '</small>' : '') + '</div>' + (q.obj ? '<p class="q-obj" dir="auto">' + E(q.obj) + '</p>' : '') + '<div class="q-meta"><span>' + Q.fmtDur(Q.taskEffort(s, q.id, now)) + (q.estimateMinutes ? ' / ' + q.estimateMinutes + 'm est.' : '') + '</span><span>' + E(q.status) + '</span></div><div class="q-meta">' + U.button('start', 'Start', q.id, 'class="qbtn start"') + U.button('log', 'Log', q.id, 'class="qbtn"') + U.button('complete', 'Done', q.id, 'class="qbtn done"') + U.button('edit', '⋯', q.id, 'class="more" aria-label="Edit quest"') + '</div>' + sessions.map(function (x) { return '<div class="q-meta"><span class="timer" data-session-clock="' + x.id + '">' + Q.fmtDur(Q.elapsed(x, now)) + '</span><span>' + E(x.status) + ' / ' + Q.fmtDur(x.limitMs) + '</span>' + (x.status === 'running' ? U.button('session.pause', 'Pause', x.id, 'class="chipbtn"') : U.button('extend', 'Extend', x.id, 'class="chipbtn"')) + U.button('session.finish', 'Finish', x.id, 'class="chipbtn"') + '</div>'; }).join('') + '</article>';
-      }).join('') || '<p class="empty">Nothing here. Plan a task in the control panel.</p>';
+      }).join('') || '<p class="empty">Nothing here. Plan a task in the control panel.</p>');
     }
-    $('achList').innerHTML = Q.ACHS.map(function (a) { return '<span class="badge' + (s.ach[a.key] ? ' on' : '') + '" title="' + E(a.name) + '">' + a.icon + '</span>'; }).join('');
+    U.html($('achList'), Q.ACHS.map(function (a) { return '<span class="badge' + (s.ach[a.key] ? ' on' : '') + '" title="' + E(a.name) + '">' + a.icon + '</span>'; }).join(''));
   }
   $('prevLens').onclick = function () { lens = (lens + lenses.length - 1) % lenses.length; render(); };
   $('nextLens').onclick = function () { lens = (lens + 1) % lenses.length; render(); };

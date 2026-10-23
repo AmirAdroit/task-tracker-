@@ -35,8 +35,20 @@ function editor() {
   };
   controller.bind(form);
   document.activeElement = field;
-  return {form, document, field, button};
+  return {form, document, field, button, controller};
 }
+
+test('background restoration leaves the existing focused field and its IME range untouched', () => {
+  const {controller, document, field} = editor();
+  let focuses = 0, ranges = 0;
+  field.focus = () => { focuses++; document.activeElement = field; };
+  field.setSelectionRange = () => { ranges++; };
+  for (let i = 0; i < 100; i++) controller.restoreFocus({element: field, start: 2, end: 5});
+  assert.equal(focuses, 0); assert.equal(ranges, 0);
+  document.activeElement = {};
+  controller.restoreFocus({element: field, start: 2, end: 5});
+  assert.equal(focuses, 1); assert.equal(ranges, 1);
+});
 
 test('implicit Enter clicks cannot commit; explicit Save clicks and Ctrl+Enter can', () => {
   const {form, button, document} = editor();

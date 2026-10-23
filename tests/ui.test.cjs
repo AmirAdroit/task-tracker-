@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const path = require('node:path');
 
 function ui() {
-  const context = vm.createContext({window: {QC: {}}, document: {}, setInterval, clearInterval, setTimeout, clearTimeout});
+  const context = vm.createContext({window: {QC: {}}, document: {querySelector: () => null}, setInterval: () => 0, clearInterval, setTimeout, clearTimeout});
   for (const file of ['editor-controller.js', 'ui-common.js']) vm.runInContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), context);
   const u = context.window.QUI, replies = [];
   u.store = {dispatch(command, callback) { replies.push({command, callback}); }};
@@ -20,6 +20,52 @@ function form() {
   return {dataset: {}, controls, error, setAttribute() {}, removeAttribute() {},
     querySelectorAll() { return controls; }, querySelector() { return error; }};
 }
+
+test('unchanged text and generated markup leave existing DOM nodes untouched', () => {
+  const {u} = ui();
+  let replacements = 0, textWrites = 0, text = '10';
+  const el = {set innerHTML(value) { replacements++; }, get textContent() { return text; },
+    set textContent(value) { textWrites++; text = value; }};
+  u.html(el, '<b>Level 1</b>');
+  for (let i = 0; i < 100; i++) { u.html(el, '<b>Level 1</b>'); u.text(el, 10); }
+  assert.equal(replacements, 1); assert.equal(textWrites, 0);
+  u.html(el, '<b>Level 2</b>'); u.text(el, 11);
+  assert.equal(replacements, 2); assert.equal(textWrites, 1);
+});
+
+test('duplicate and stale load notifications do not redraw the accepted snapshot', () => {
+  let snapshot = {revision: 4}, onChange, renders = 0;
+  const store = {kind: 'bridge', load(callback) { callback(JSON.stringify(snapshot)); }, onChange(callback) { onChange = callback; }};
+  // Supply only the model/store surface used during boot.
+  const context = vm.createContext({window: {QC: {normalize: value => value, makeStore: callback => callback(store)}},
+    document: {querySelector: () => null}, setInterval: () => 0, setTimeout, clearTimeout});
+  for (const file of ['editor-controller.js', 'ui-common.js']) vm.runInContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), context);
+  context.window.QUI.boot(() => { renders++; });
+  assert.equal(renders, 1);
+  onChange(); assert.equal(renders, 1);
+  snapshot = {revision: 3}; onChange(); assert.equal(renders, 1);
+  snapshot = {revision: 5}; onChange(); assert.equal(renders, 2);
+});
+
+test('repair restores styles and stale frame callbacks cannot finish a newer repair', () => {
+  const frames = [], timers = [];
+  let opacity = '0.8', priority = 'important';
+  const style = {getPropertyValue: () => opacity, getPropertyPriority: () => priority,
+    setProperty(name, value, importance) { opacity = value; priority = importance; },
+    removeProperty() { opacity = ''; priority = ''; }};
+  const context = vm.createContext({window: {QC: {}}, document: {documentElement: {style}},
+    requestAnimationFrame: callback => frames.push(callback), setTimeout: callback => timers.push(callback), clearTimeout() {}});
+  for (const file of ['editor-controller.js', 'ui-common.js']) vm.runInContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), context);
+  const u = context.window.QUI;
+  u.repaint(); u.repaint(); assert.equal(frames.length, 1);
+  timers[0](); assert.equal(opacity, '0.8'); assert.equal(priority, 'important');
+  u.repaint(); assert.equal(u.repaintPending, true);
+  frames.shift()(); // Old outer frame queues its obsolete restore callback.
+  frames.shift()(); // Current outer frame queues its own restore callback.
+  frames.shift()(); assert.equal(u.repaintPending, true);
+  frames.shift()(); assert.equal(u.repaintPending, false);
+  assert.equal(opacity, '0.8'); assert.equal(priority, 'important');
+});
 
 test('an older successful command reply cannot hide newer panel data', () => {
   const {u, replies} = ui();

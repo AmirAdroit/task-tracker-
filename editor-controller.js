@@ -22,6 +22,9 @@
     function restore(saved, fallback) {
       if (document.querySelector('dialog[open]')) return;
       var el = saved && (visible(saved.element) ? saved.element : saved.selector && document.querySelector(saved.selector));
+      // A protected editor was not replaced. Re-focusing/re-setting its range
+      // on every autosave interferes with native selection and IME preedit.
+      if (el && document.activeElement === el) return;
       if (focus(el, saved)) return;
       if (fallback) {
         var heading = document.querySelector('main h1,h1,#addInput');
@@ -111,10 +114,17 @@
       if (previous) { if (previous.open) previous.close(); previous.remove(); }
       var d = document.createElement('dialog'); d.id = 'editor'; document.body.appendChild(d);
       var record = {dialog:d, opener:opener}; current = record; closing = null;
+      var nativeClose = d.close;
+      d.close = function () {
+        nativeClose.apply(d, arguments);
+        // Chromium queues the close event with rendering. Finish our lifecycle
+        // immediately even if a hidden/stalled compositor delays that event.
+        if (!d.open) closed(record);
+      };
       d.innerHTML = '<form id="edit-form"><header><h2>' + U.esc(title) + '</h2><button type="button" data-cancel aria-label="Close">×</button></header><div class="form-grid">' + body + '</div><p id="form-error" role="alert"></p><footer><button type="button" data-cancel>Cancel</button><button class="primary" type="submit">' + U.esc(submitLabel || 'Save') + ' <kbd>Ctrl+Enter</kbd></button></footer></form>';
       var form = d.querySelector('form'); bind(form, record);
       d.addEventListener('close', function () { closed(record); });
-      d.addEventListener('cancel', function (e) { if (record.composing || record.justComposed) e.preventDefault(); });
+      d.addEventListener('cancel', function (e) { e.preventDefault(); if (!record.composing && !record.justComposed) d.close(); });
       d.querySelectorAll('[data-cancel]').forEach(function (b) { b.onclick = function () { d.close(); }; });
       form.onsubmit = function (e) {
         e.preventDefault();

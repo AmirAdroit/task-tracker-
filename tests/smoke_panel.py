@@ -9,6 +9,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--enable-transparent-visuals")
 
+from rendering import configure_rendering
+configure_rendering(sys.argv[1:])
+
 from PySide6.QtCore import QEventLoop, QTimer, QSettings, QEvent
 from PySide6.QtWidgets import QApplication
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
