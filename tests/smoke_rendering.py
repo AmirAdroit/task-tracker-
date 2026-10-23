@@ -120,18 +120,35 @@ def type_text(text):
     QTest.keyClicks(panel.view.focusProxy(), text, Qt.NoModifier, 2); settle(35)
 
 
+def stable_frame():
+    # A JS/rAF reply only confirms style restoration, not that Chromium's frame
+    # has reached Qt. In hosted offscreen runs the old caret/opacity frame can
+    # still be presented after that reply. Wait for actual, unchanged pixels.
+    wait(lambda: js(panel.page, '!QUI.repaintPending'), 'repair styles restored')
+    start = unchanged = time.monotonic()
+    previous = None
+    while time.monotonic() - start < 5:
+        settle(80)
+        current = panel.view.grab().toImage()
+        pixels = (current.size(), bytes(current.constBits()))
+        now = time.monotonic()
+        if pixels != previous:
+            previous, unchanged = pixels, now
+        elif now - start >= 0.5 and now - unchanged >= 0.35:
+            return current
+    current.save(str(folder / 'unstable-frame.png'))
+    raise AssertionError('Chromium/Qt pixels did not settle within five seconds')
+
+
 def repaint_comparison(index):
     # Suppress only the blinking caret while comparing two otherwise identical
     # frames. Keep text, focus borders, editor contents and the page visible.
     js(panel.page, 'window.caretRule=document.createElement("style");caretRule.textContent="input,textarea{caret-color:transparent!important}";document.head.append(caretRule)')
-    settle(120)
+    before = stable_frame()
     before_state = js(panel.page, 'JSON.stringify({pending:QUI.repaintPending,opacity:document.documentElement.style.opacity,width:innerWidth,height:innerHeight,focus:document.activeElement.name})')
-    before = panel.view.grab().toImage()
     panel.repair_display()
-    wait(lambda: js(panel.page, '!QUI.repaintPending'), 'repair frame completes')
-    settle(120)
+    after = stable_frame()
     after_state = js(panel.page, 'JSON.stringify({pending:QUI.repaintPending,opacity:document.documentElement.style.opacity,width:innerWidth,height:innerHeight,focus:document.activeElement.name})')
-    after = panel.view.grab().toImage()
     assert before.size() == after.size()
     a, b = bytes(before.constBits()), bytes(after.constBits())
     differences = sum(x != y for x, y in zip(a, b)) / max(1, len(a)) if a != b else 0
