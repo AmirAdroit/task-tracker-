@@ -52,6 +52,10 @@
     if (typeof s.settings.dayBoundary !== 'number') s.settings.dayBoundary = 4;
     s.settings.trackingStart = s.settings.trackingStart || trackingDay(s, now);
     s.reviews = s.reviews || {};
+    Object.keys(s.reviews).forEach(function (day) {
+      var review = s.reviews[day];
+      if ('nextDayNote' in review) assert(typeof review.nextDayNote === 'string', 'Invalid save: next-day reminder must be text');
+    });
     s.requestIds = s.requestIds || [];
     s.revision = s.revision || 0;
     ['level', 'xp', 'xpMax', 'gold', 'goldEarned'].forEach(function (k) { assert(typeof s[k] === 'number' && isFinite(s[k]) && s[k] >= (k === 'level' || k === 'xpMax' ? 1 : 0), 'Invalid save: ' + k); });
@@ -175,6 +179,11 @@
       if (!off(s, day) && reviewAt(s, day) <= now && (!r || ['submitted', 'skipped'].indexOf(r.status) < 0)) list.push(day);
     }
     return list;
+  }
+  function nextDayReminder(s, day) {
+    var sourceDay = shift(date(day), -1), review = s.reviews[sourceDay];
+    if (!review || typeof review.nextDayNote !== 'string' || !review.nextDayNote.trim()) return null;
+    return {sourceDay: sourceDay, targetDay: day, text: review.nextDayNote};
   }
   function sliceRange(s, start, end) {
     var out = [];
@@ -362,6 +371,7 @@
       else {
         Object.keys(p.outcomes || {}).forEach(function (id) { assert(['done', 'partial', 'notDone', 'skipped'].indexOf(p.outcomes[id]) >= 0, 'Choose a valid outcome'); requireItem(s, 'quests', Number(id)); });
         x.outcomes = p.outcomes || x.outcomes; if ('note' in p) x.note = p.note;
+        if ('nextDayNote' in p) { assert(typeof p.nextDayNote === 'string', 'Next-day reminder must be text'); x.nextDayNote = p.nextDayNote; }
         if (cmd.type === 'review.submit') {
           assert(expected(s, p.day).every(function (t) { return t.status === 'done' || !!x.outcomes[t.id]; }), 'Choose an outcome for each scheduled task or routine');
           Object.keys(x.outcomes).forEach(function (id) { if (x.outcomes[id] === 'done') complete(s, requireItem(s, 'quests', Number(id)), now, p.day); });
@@ -425,5 +435,5 @@
       });
     } else preview();
   }
-  Object.assign(Q, {VERSION: 4, normalize: normalize, defaultState: defaults, copy: copy, apply: apply, find: find, shiftDay: shift, dayBoundary: boundary, trackingDay: trackingDay, isOff: off, elapsed: elapsed, taskEffort: taskEffort, routineDue: routineDue, rollover: rollover, expected: expected, projectedRoutines: projectedRoutines, pendingReviews: pendingReviews, reviewAt: reviewAt, entries: entries, daySummary: daySummary, projectSummary: projectSummary, totalEffort: totalEffort, makeStore: makeStore});
+  Object.assign(Q, {VERSION: 4, normalize: normalize, defaultState: defaults, copy: copy, apply: apply, find: find, shiftDay: shift, dayBoundary: boundary, trackingDay: trackingDay, isOff: off, elapsed: elapsed, taskEffort: taskEffort, routineDue: routineDue, rollover: rollover, expected: expected, projectedRoutines: projectedRoutines, pendingReviews: pendingReviews, reviewAt: reviewAt, nextDayReminder: nextDayReminder, entries: entries, daySummary: daySummary, projectSummary: projectSummary, totalEffort: totalEffort, makeStore: makeStore});
 })(window);

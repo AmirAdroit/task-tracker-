@@ -18,6 +18,8 @@ Bridge interface: `load()` returns JSON; `dispatch(commandJson)` returns `{ok,st
 
 `testBoardReminder()` previews native UI without saving. Board configuration lives in `settings.boardReminder` (enabled/mode/time/intervalMinutes/days/windowStart/windowEnd/anchor); settings changes re-anchor intervals, unrelated saves do not. `routine.addOccurrence {routineId,day}` explicitly reuses/restores one active/paused occurrence. `dayOff.clear {start,end}` subtracts dates from all overlapping periods; keep identities/labels on remaining fragments. `task.complete` accepts a validated matching routine occurrence date; actual timestamps remain intact.
 
+`review.save` / `review.submit` accept optional string `nextDayNote` alongside the independent daily `note`. Omission preserves it; an empty string clears it. `QC.nextDayReminder(state,targetDay)` derives one incoming note from the immediately preceding review date, regardless of review status or days off. Never copy reminders into later reviews, create tasks, or attach notification scheduling. Preserve v4 compatibility and the existing local-wins same-date import-merge policy.
+
 ## Invariants
 
 - Status never starts a timer. Sessions, tasks, allocations, reviews, and dated routine occurrences have separate identities.
@@ -35,6 +37,7 @@ Bridge interface: `load()` returns JSON; `dispatch(commandJson)` returns `{ok,st
 - Preserve stable `uid` identities across exports/merges, remap numeric references, and deduplicate completion rewards.
 - Preserve originals for suspicious legacy durations and corrected timer records. Do not invent historical ranges.
 - A background signal must not wipe typed fields, settings, open dialogs or focus. Review drafts save as the user types.
+- Review UI tests must target `name=note` and `name=nextDayNote` separately. Exercise actual alternating typing, newlines, native Persian preedit/commit, write failure/retry, reopen and persisted reload; assert no unchanged-header rebuilds or caret resets. Journal/Today render escaped text with preserved line breaks and explicit source/target dates.
 - Do not rebuild unchanged header/HUD markup or reapply focus/ranges to a focused surviving field on background updates. This caused repeated redraw/IME churn during review autosave. Keep intentional selection changes when a field really was replaced. Editor teardown must not depend solely on Chromium's render-timed close event.
 - Native panel Repair display requests fresh Chromium frames: no reload, viewport resize, focus changes or data commands. Do not QWidget.repaint() over a GPU-backed web surface; it can blank the content without obtaining a fresh browser frame. Scope restoration callbacks to their own repair token. Destroy all pages/windows before their shared WebEngine profile at application shutdown.
 - Recovery ZIPs are private and byte-verified. Validate paths/checksums before writes, refuse restore while the app's IPC lock is owned, save current code/data first, and keep the interruption marker until restoration/reversal completes. Code rollback never rolls data back implicitly. Preserve corrupt current bytes, but refuse invalid archive task data for explicit data restore.
@@ -49,6 +52,8 @@ Vanilla JavaScript, no build step/framework/server/CDN/telemetry. Code must exec
 All personal data, backups, local screenshots and browser profiles remain under ignored `data/`. Never publish them. Tests use synthetic fixtures. `QUESTHUD_DATA_DIR` isolates manual tests and disables startup integration. Native service tests must not modify the real startup folder; use the helper's temporary-folder override.
 
 Do not run old application instances against migrated data. Stop them after a safety backup before the first live upgrade. Startup belongs to this installation's named shortcut; do not change unrelated startup entries. Silent background launches use hidden windows.
+
+Startup Settings and the manual installer share `configure_startup`. It recognizes this base directory's `start-hud.vbs` and `start-stable.vbs` as owned targets, migrates in place to the latter, clears stale arguments, verifies the saved target/working directory, and refuses foreign links on enable and disable. Tests use temporary folders, including paths with spaces/apostrophes; never execute the manual installer against the real startup folder during automated checks. Back up the live shortcut along with app/data before deployment; report shortcut-launch verification separately from a real login/reboot.
 
 ## Commands and definition of done
 

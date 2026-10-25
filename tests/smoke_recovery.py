@@ -50,6 +50,9 @@ with tempfile.TemporaryDirectory(dir=folder) as temporary:
     task = result['state']['quests'][-1]['id']
     result = service.dispatch({'type': 'task.complete', 'payload': {'id': task}})
     assert result['ok'], result
+    review_day = '2000-01-01'
+    result = service.dispatch({'type':'review.save','payload':{'day':review_day,'note':'Historical daily note','nextDayNote':'Keep tomorrow\nفارسی'}})
+    assert result['ok'], result
     newer = (data / 'quests.json').read_bytes()
     state_before = json.loads(newer)
     safety = recovery.restore(point, installation, data)
@@ -92,6 +95,7 @@ hud.main()
     for key in ('gold', 'xp', 'level', 'completed'):
         assert reopened[key] == state_before[key], key
     assert any(q['id'] == task for q in reopened['quests'])
+    assert reopened['reviews'][review_day] == state_before['reviews'][review_day]
     print('PASS: rolled-back native application launches and preserves completed work/rewards', flush=True)
     current_data = (data / 'quests.json').read_bytes()
     recovery.restore(safety, installation, data)

@@ -3,9 +3,13 @@ setlocal
 cd /d "%~dp0"
 title Quest HUD - add to startup
 
-set "STARTUP=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup"
+if not exist ".venv\Scripts\python.exe" (
+  echo [!] Run run.bat once to finish setup first.
+  pause
+  exit /b 1
+)
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut('%STARTUP%\Quest HUD.lnk'); $s.TargetPath='%~dp0start-hud.vbs'; $s.WorkingDirectory='%~dp0'; $s.Save()"
+".venv\Scripts\python.exe" -B -c "from state_service import configure_startup; configure_startup(True)"
 if errorlevel 1 ( echo [!] Could not create the startup shortcut. & pause & exit /b 1 )
 
 echo Done. Quest HUD will now start automatically when you log in to Windows.

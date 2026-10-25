@@ -48,6 +48,7 @@ overlay.request_quit = lambda: None
 bridge.collapsedRequested.connect(overlay.set_collapsed)
 overlay.move(30, 30)
 panel.move(360, 40)
+panel.setWindowFlag(hud.Qt.WindowStaysOnTopHint, True)
 panel.show()
 overlay.show()
 
@@ -88,12 +89,24 @@ def command(kind, payload=None):
     return result['state']
 
 
-def capture(widget, filename):
-    # Wait for compositor painting as well as DOM updates.
+def capture(widget, filename, selector=None):
+    # Hidden WebEngine pages may return an older surface even when DOM queries
+    # are current. Expose this synthetic window before collecting visual proof.
+    if widget.isMinimized():
+        widget.showNormal()
+    widget.raise_(); widget.activateWindow()
+    wait(lambda: widget.windowHandle().isExposed() and widget.page.isVisible()
+         and js(widget.page, 'document.visibilityState') == 'visible', 'screenshot window is exposed')
+    if selector:
+        js(widget.page, 'document.querySelector(' + json.dumps(selector) + ').scrollIntoView({block:"center"})')
+    js(widget.page, 'QUI.repaint()')
+    wait(lambda: js(widget.page, '!QUI.repaintPending'), 'screenshot repair styles restored')
     loop = QEventLoop()
-    QTimer.singleShot(250, loop.quit)
+    QTimer.singleShot(650, loop.quit)
     loop.exec()
-    assert widget.grab().save(str(folder / filename))
+    picture = widget.grab()
+    assert len(set(bytes(picture.toImage().constBits()))) > 32, 'Blank visual evidence'
+    assert picture.save(str(folder / filename))
 
 
 try:
@@ -149,11 +162,16 @@ try:
     wait(lambda: js(panel.page, '!!document.getElementById("review-form")'), 'native review navigation opens check-in')
     js(panel.page, 'var n=document.querySelector("#review-form [name=note]"); n.value="Saved draft فارسی"; n.dispatchEvent(new Event("input",{bubbles:true}))')
     wait(lambda: service.snapshot()['reviews'].get(day, {}).get('note') == 'Saved draft فارسی', 'daily review draft persists while typing')
-    capture(panel, 'today-review.png')
+    next_note = 'Tomorrow: verify the restore\nفردا بررسی شود <script>literal</script>'
+    js(panel.page, 'var n=document.querySelector("#review-form [name=nextDayNote]");n.value=' + json.dumps(next_note) + ';n.dispatchEvent(new Event("input",{bubbles:true}))')
+    wait(lambda: service.snapshot()['reviews'][day].get('nextDayNote') == next_note, 'separate next-day reminder draft persists')
+    capture(panel, 'today-review.png', '#review-form [name=nextDayNote]')
     js(panel.page, 'document.querySelector("[data-action=review-close]").click()')
     wait(lambda: js(panel.page, '!document.getElementById("review-form")'), 'closing a review actually removes its form')
     bridge.openView('review:' + day)
     wait(lambda: js(panel.page, '!!document.getElementById("review-form")'), 'closed draft can be reopened')
+    assert js(panel.page, 'document.querySelector("#review-form [name=note]").value') == 'Saved draft فارسی'
+    assert js(panel.page, 'document.querySelector("#review-form [name=nextDayNote]").value') == next_note
     # The injected timer clock advances four hours; near 04:00 the routine can
     # belong to a different tracking day. Check this review's actual questions.
     review_questions = js(panel.page, 'document.querySelectorAll("#review-form select").length')
@@ -162,6 +180,34 @@ try:
     wait(lambda: len(service.snapshot()['reviews'][day].get('outcomes', {})) == review_questions, 'review outcomes save before submission')
     js(panel.page, 'document.querySelector("[data-action=review-submit]").click()')
     wait(lambda: service.snapshot()['reviews'][day]['status'] == 'submitted' and js(panel.page, '!document.getElementById("review-form")'), 'submitting a review closes it without a stuck focused form')
+    tomorrow = service._eval('QC.shiftDay(' + json.dumps(day) + ',1)').toString()
+    clock[0] = int(service._eval('QC.dayBoundary(' + json.dumps(tomorrow) + ',12)').toNumber())
+    for page in (panel.page, overlay.page):
+        js(page, 'Date.now=function(){return ' + str(clock[0]) + '}')
+    service.tick()
+    js(panel.page, 'document.querySelector("[data-view=today]").click()')
+    wait(lambda: js(panel.page, '!!document.querySelector("[data-next-day-reminder]")'), 'next tracking day displays yesterday\'s reminder on Today')
+    assert js(panel.page, 'document.querySelector("[data-next-day-reminder] .review-note").textContent') == next_note
+    assert js(panel.page, 'document.querySelector("[data-next-day-reminder] script") === null')
+    bridge.openView('review:' + tomorrow)
+    wait(lambda: js(panel.page, '!!document.querySelector("#review-form [name=nextDayNote]")'), 'next day has its own outgoing review field')
+    assert js(panel.page, 'document.querySelector("#review-form [name=nextDayNote]").value') == ''
+    js(panel.page, 'document.querySelector("[data-action=review-close]").click()')
+    command('dayOff.save', {'start':tomorrow,'end':tomorrow,'label':'Rest day'})
+    wait(lambda: js(panel.page, '!!document.querySelector("[data-next-day-reminder]") && document.body.innerText.includes("Rest day")'), 'saved reminder remains visible on a day off')
+    js(panel.page, 'document.querySelector("[data-view=journal]").click();document.querySelector("[data-action=journal-now]").click()')
+    wait(lambda: js(panel.page, '!!document.querySelector("[data-next-day-reminder]")'), 'Journal Today selection displays incoming reminder')
+    js(panel.page, 'var d=document.querySelector("[name=journal-day]");d.value=' + json.dumps(day) + ';d.dispatchEvent(new Event("change",{bubbles:true}))')
+    wait(lambda: js(panel.page, '!!document.querySelector("[data-written-next-day-note]")'), 'Journal source day preserves its outgoing reminder')
+    assert js(panel.page, 'document.querySelector("[data-written-next-day-note] .review-note").textContent') == next_note
+    capture(panel, 'journal-next-day-note.png', '[data-written-next-day-note]')
+    js(panel.page, 'document.querySelector("[data-written-next-day-note] [data-action=review-day]").click()')
+    wait(lambda: js(panel.page, '!!document.querySelector("#review-form [name=nextDayNote]")'), 'Edit reminder opens the original review')
+    js(panel.page, 'var n=document.querySelector("#review-form [name=nextDayNote]");n.value="";n.dispatchEvent(new Event("input",{bubbles:true}))')
+    wait(lambda: service.snapshot()['reviews'][day].get('nextDayNote') == '', 'clearing reminder persists without clearing the daily note')
+    assert service.snapshot()['reviews'][day]['note'] == 'Saved draft فارسی'
+    js(panel.page, 'document.querySelector("[data-action=review-close]").click();document.querySelector("[data-view=today]").click()')
+    wait(lambda: js(panel.page, '!document.querySelector("[data-next-day-reminder]")'), 'cleared reminder is removed from Today')
     js(panel.page, 'document.querySelector("[data-action=task-new]").click()')
     command('task.add', {'title':'Added while editor open'})
     js(panel.page, 'document.querySelector("#edit-form [data-cancel]").click()')

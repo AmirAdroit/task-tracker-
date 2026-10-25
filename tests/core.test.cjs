@@ -16,6 +16,84 @@ function apply(s, type, payload = {}, now = t0) { return Q.apply(s, {type, paylo
 function task(s, title = 'Work', extra = {}) { return apply(s, 'task.add', {title, ...extra}); }
 function last(s, group) { return s[group][s[group].length - 1]; }
 
+test('review notes save independently, preserve plain text, and clear explicitly without rewards', () => {
+  let s = fresh(); const initial = plain(s);
+  const text = 'Call tomorrow\nیادآوری فارسی <script>literal</script>';
+  s = apply(s, 'review.save', {day:'2026-10-18', note:'Today went well', nextDayNote:text});
+  assert.deepEqual(plain(Q.nextDayReminder(s, '2026-10-19')), {sourceDay:'2026-10-18', targetDay:'2026-10-19', text});
+  s = apply(s, 'review.save', {day:'2026-10-18', note:'Revised daily note'});
+  assert.equal(s.reviews['2026-10-18'].nextDayNote, text);
+  s = apply(s, 'review.save', {day:'2026-10-18', nextDayNote:''});
+  assert.equal(s.reviews['2026-10-18'].note, 'Revised daily note');
+  assert.equal(Q.nextDayReminder(s, '2026-10-19'), null);
+  s = apply(s, 'review.save', {day:'2026-10-18', nextDayNote:' \n '});
+  assert.equal(Q.nextDayReminder(s, '2026-10-19'), null);
+  for (const key of ['quests','sessions','completed','gold','goldEarned','xp','level']) assert.deepEqual(plain(s[key]), initial[key], key);
+});
+
+test('next-day reminders follow tracking days, month ends, leap days and year ends', () => {
+  let s = apply(fresh(), 'review.save', {day:'2026-12-31', nextDayNote:'New year'});
+  assert.equal(Q.nextDayReminder(s, Q.trackingDay(s, at('2027-01-01T03:59:59Z'))), null);
+  assert.equal(Q.nextDayReminder(s, Q.trackingDay(s, at('2027-01-01T04:00:00Z'))).text, 'New year');
+  s = apply(s, 'review.save', {day:'2028-02-28', nextDayNote:'Leap day'});
+  s = apply(s, 'review.save', {day:'2028-02-29', nextDayNote:'March'});
+  assert.equal(Q.nextDayReminder(s, '2028-02-29').text, 'Leap day');
+  assert.equal(Q.nextDayReminder(s, '2028-03-01').text, 'March');
+});
+
+test('saved draft, submitted and skipped reminders remain available on days off', () => {
+  let s = fresh();
+  for (const [day,status] of [['2026-10-18','draft'],['2026-10-19','submitted'],['2026-10-20','skipped']]) {
+    s = apply(s, 'review.save', {day, nextDayNote:status});
+    if (status === 'submitted') s = apply(s, 'review.submit', {day});
+    if (status === 'skipped') s = apply(s, 'review.skip', {day});
+    assert.equal(s.reviews[day].status, status);
+    assert.equal(Q.nextDayReminder(s, Q.shiftDay(day,1)).text, status);
+  }
+  s = apply(s, 'dayOff.save', {start:'2026-10-21',end:'2026-10-21',label:'Rest'});
+  assert.equal(Q.nextDayReminder(s, '2026-10-21').text, 'skipped');
+});
+
+test('catch-up reminders stay on the reviewed date and never automatically carry forward', () => {
+  let s = apply(fresh(), 'review.save', {day:'2020-01-31', nextDayNote:'Historical reminder'});
+  assert.equal(Q.nextDayReminder(s, '2020-02-01').text, 'Historical reminder');
+  assert.equal(Q.nextDayReminder(s, '2026-10-19'), null);
+  s = apply(s, 'tick', {}, t0 + 3 * 86400000);
+  assert.equal(s.reviews['2020-02-01'], undefined);
+  s = apply(s, 'review.save', {day:'2020-01-31', nextDayNote:'Updated'});
+  assert.equal(Q.nextDayReminder(s, '2020-02-01').text, 'Updated');
+  s = apply(s, 'review.save', {day:'2020-01-31', nextDayNote:''});
+  assert.equal(Q.nextDayReminder(s, '2020-02-01'), null);
+});
+
+test('old saves and export/import preserve reminders while same-day merge keeps local reviews', () => {
+  let old = fresh(); old.reviews['2026-10-18'] = {day:'2026-10-18',status:'draft',note:'Local daily note',outcomes:{}};
+  old = Q.normalize(plain(old), t0);
+  assert.equal(old.version, 4); assert.equal(Q.nextDayReminder(old, '2026-10-19'), null);
+  let incoming = apply(fresh(), 'review.save', {day:'2026-10-18',nextDayNote:'Incoming conflict'});
+  incoming = apply(incoming, 'review.submit', {day:'2026-10-19',note:'Daily',nextDayNote:'Tomorrow\nفارسی'});
+  const roundTrip = Q.normalize(plain(incoming), t0);
+  assert.equal(roundTrip.reviews['2026-10-19'].nextDayNote, 'Tomorrow\nفارسی');
+  const replaced = apply(old, 'import.replace', {data:plain(incoming)});
+  assert.equal(replaced.reviews['2026-10-18'].nextDayNote, 'Incoming conflict');
+  const merged = apply(old, 'import.merge', {data:plain(incoming)});
+  assert.equal(merged.reviews['2026-10-18'].note, 'Local daily note');
+  assert.equal(merged.reviews['2026-10-18'].nextDayNote, undefined);
+  assert.equal(merged.reviews['2026-10-19'].nextDayNote, 'Tomorrow\nفارسی');
+  assert.deepEqual(plain(apply(merged, 'import.merge', {data:plain(incoming)}).reviews), plain(merged.reviews));
+});
+
+test('invalid next-day reminder types reject commands and imports without altering the save', () => {
+  const s = fresh(), original = plain(s);
+  for (const nextDayNote of [null, 42, {}, []]) {
+    assert.throws(() => apply(s, 'review.save', {day:'2026-10-18',nextDayNote}), /must be text/);
+    const invalid = plain(s); invalid.reviews['2026-10-18'] = {day:'2026-10-18',status:'draft',nextDayNote};
+    assert.throws(() => Q.normalize(invalid, t0), /must be text/);
+    assert.throws(() => apply(s, 'import.replace', {data:invalid}), /must be text/);
+  }
+  assert.deepEqual(plain(s), original);
+});
+
 test('migration preserves rewards and history, excludes suspicious legacy time, and stops old timers', () => {
   const old = {version: 2, gold: 50, goldEarned: 70, quests: [{id: 1, title: 'Old', started: t0 - 700 * H}], recurring: [], completed: [{title: 'Long', at: t0, ms: 744 * H, xp: 30}, {title: 'Short', at: t0, ms: H}], nextId: 2};
   const s = Q.normalize(old, t0);

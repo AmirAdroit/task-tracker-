@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.0.6 — stable startup and next-day review notes
+
+- Point Start with Windows and the manual installer at the stable launcher through one guarded helper. Migrate owned legacy shortcuts in place, verify their properties, and protect other installations on enable and disable.
+- Add an independently autosaved Reminders for tomorrow textbox with an explicit target tracking date. Show saved reminders on Today and on both source/target Journal dates, with an Edit reminder link to the original review.
+- Retain notes from draft/submitted/skipped reviews and on days off; preserve multiline Persian/English text. Clearing the source clears its reminder. No automatic task creation, carry-forward, new popups or v4 format migration.
+- Cover date boundaries, export/import, native persistence, startup ownership, both textboxes' Qt typing/IME and failed saves, plus the existing UI/rendering and recovery checks.
+
 ## 4.0.5 — rendering stability and recoverable rollback
 
 - Retain unchanged header/HUD DOM, deduplicate repeated snapshot notifications, and leave surviving focused fields/IME selection untouched during review autosaves. A reproduced 144-character entry previously caused 288 header rebuilds and 288 range resets; the repaired path causes zero of either. Preserve the heading focus anchor across late updates after archiving.
