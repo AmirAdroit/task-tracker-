@@ -14,7 +14,7 @@ cd task-tracker-
 run.bat
 ```
 
-`run.bat` creates `.venv` and installs the pinned dependency. Run it again after upgrading the source. Use `start-hud.vbs` for silent launches. Settings → Start with Windows manages this installation's startup shortcut; it defaults to enabled. `install-startup.bat` remains available for manual setup.
+`run.bat` creates `.venv` and installs the pinned dependency. Run it again after upgrading the source. Use `start-stable.vbs` for silent stable-renderer launches; `start-hud.vbs` remains compatible. Settings → Start with Windows manages this installation's **Quest HUD** startup shortcut; it defaults to enabled and targets `start-stable.vbs`. The shared helper updates this installation's legacy launcher link in place, verifies the target/working directory, and refuses to replace or remove a different installation's shortcut. `install-startup.bat` uses the same helper after setup; keep Start with Windows enabled in Settings so the app retains that shortcut.
 
 Stable software rendering is the default. It avoids Chromium GPU compositing and uses full-frame Qt raster updates, including at fractional Windows scaling. This can use more CPU than automatic graphics. After an update, **quit from the tray and relaunch**; closing the panel alone keeps the existing UI process running. `start-stable.vbs` explicitly selects stable rendering. For a comparison/troubleshooting run, use `run.bat --renderer auto` or `QUESTHUD_RENDERER=auto` before launch. Rendering selection is outside task settings and does not change the JSON save.
 
@@ -30,16 +30,16 @@ If the HUD becomes hard to reach, use tray → **Reset size and position**, **Re
 2. Use **Planner** to allocate effort to a date. The same task can have allocations on several days. Scheduling effort does not duplicate the task or change its deadline.
 3. In **Today**, start a bounded session or choose **Log time**. At the cap, time stops and the app asks you to finish or extend. A task marked in progress does not accumulate time by itself.
 4. Complete a task when its outcome is achieved. Finishing a session and completing a task are separate actions. Completion grants XP/gold once.
-5. Fill in the daily check-in. Record Done, Partial, Not done, or Skipped for scheduled tasks/routines; add missing effort and optional notes.
+5. Fill in the daily check-in. Record Done, Partial, Not done, or Skipped for scheduled tasks/routines; add missing effort, a daily note, and optional **Reminders for tomorrow**.
 6. Use **Journal** to inspect a date, edit manual records, correct completed timers, or review earlier days.
 
 ### Views
 
 | View | Contents |
 |---|---|
-| Today | Scheduled work, routines, sessions, effort totals, check-in, quick logging |
+| Today | Yesterday's reminder for this day, scheduled work, routines, sessions, effort totals, check-in, quick logging |
 | Planner | Flexible periods, goals with success criteria, projects, milestones, weekly allocations and availability warnings |
-| Journal | Month calendar, daily work records, completions, review outcomes, days off |
+| Journal | Month calendar, daily work records, completions, review outcomes, incoming/outgoing next-day notes, days off |
 | Quests | Standalone/project tasks, status board, filters, estimates, checklists, categories and rewards |
 | Routines | Daily, Mon–Fri, selected weekdays, weekly, every-N-days; date bounds, pause/resume/archive |
 | Stats | Daily planned/actual effort, categories, projects, estimate overruns and routine outcomes |
@@ -60,6 +60,10 @@ The HUD has Focus / Today / Backlog / Sessions / Done lenses, category filtering
 ## Reviews, routines, and time off
 
 The initial review time is **23:00**, repeating every **30 minutes**, both editable. The panel opens with the review and offers 15/30/60-minute snoozes. Drafts save while you type. Closing the panel or a notification does not submit the review. Notifications can be suppressed by Windows, so pending reviews also appear in the HUD/panel.
+
+**Reminders for tomorrow** is a separate, optional textbox beneath the daily note. Both fields autosave independently and retain multiline Persian/English text. Its label shows the intended date: the tracking day immediately after the reviewed date, using your existing day boundary. A catch-up review stays attached to that historical date rather than moving its reminder to the day you happen to type it.
+
+The following day, Today shows the saved reminder near the top with **Edit reminder**, which opens its source review. Journal shows incoming reminders on their target dates and outgoing reminders beside their source reviews. Saved draft, submitted and skipped reviews all retain their notes, including on days off. Clear the source textbox to remove its reminder; it never copies itself forward, creates tasks, changes rewards or adds notification popups. The optional `reviews[day].nextDayNote` field remains compatible with v4 JSON saves and exports. Import merge keeps an existing local review on date conflicts, as before.
 
 Reviews begin on the upgrade tracking day. Startup/resume gathers unanswered days into one catch-up view; it never invents months of earlier obligations. The app must be running to notify. Start with Windows allows catch-up at the next login; QuestHUD does not wake a powered-off PC or relaunch itself after an explicit Quit until you launch it or log in again.
 

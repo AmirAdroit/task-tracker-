@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import sys
 import time
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -130,14 +131,18 @@ exposure_recoveries = 0
 
 def expose_panel():
     global exposure_recoveries
-    if panel.isMinimized():
-        exposure_recoveries += 1
-        print('FIXTURE: restoring minimized synthetic test window', flush=True)
-        panel.showNormal()
     panel.raise_()
     panel.activateWindow()
-    wait(lambda: panel.windowHandle().isExposed() and panel.page.isVisible()
-         and js(panel.page, 'document.visibilityState') == 'visible', 'synthetic browser is exposed')
+    def visible():
+        global exposure_recoveries
+        # Windows can minimize the test window after this wait has started.
+        if panel.isMinimized():
+            exposure_recoveries += 1
+            print('FIXTURE: restoring minimized synthetic test window', flush=True)
+            panel.showNormal(); panel.raise_(); panel.activateWindow()
+        return (panel.windowHandle().isExposed() and panel.page.isVisible()
+                and js(panel.page, 'document.visibilityState') == 'visible')
+    wait(visible, 'synthetic browser is exposed')
 
 
 def stable_frame():
@@ -208,7 +213,7 @@ try:
     task = service.snapshot()['quests'][-1]['id']
     wait(lambda: js(panel.page, 'QUI.state.revision') == service.snapshot()['revision'], 'rendering fixture synchronized')
     js(panel.page, 'QUI.navigate("review:"+QC.trackingDay(QUI.state))')
-    wait(lambda: js(panel.page, '!!document.querySelector("#review-form textarea")'), 'review textbox ready')
+    wait(lambda: js(panel.page, '!!document.querySelector("#review-form [name=note]") && !!document.querySelector("#review-form [name=nextDayNote]")'), 'both review textboxes ready')
     panel.raise_(); panel.activateWindow(); panel.view.setFocus(); settle(100)
     js(panel.page, 'window.oldHeader=document.querySelector("#character").firstChild;window.headerMutations=0;window.rangeResets=0;new MutationObserver(ms=>headerMutations+=ms.length).observe(document.querySelector("#character"),{childList:true,subtree:true});window.nativeRange=HTMLTextAreaElement.prototype.setSelectionRange;HTMLTextAreaElement.prototype.setSelectionRange=function(){rangeResets++;return nativeRange.apply(this,arguments)};document.querySelector("#review-form textarea").focus()')
     review_text = 'Ordinary typing without repeated redraws. ' * 4
@@ -219,19 +224,58 @@ try:
     measurements = json.loads(js(panel.page, 'JSON.stringify({headerReplaced:oldHeader!==document.querySelector("#character").firstChild,headerMutations,rangeResets})'))
     assert measurements == {'headerReplaced': False, 'headerMutations': 0, 'rangeResets': 0}, measurements
     print('PASS: autosave keeps header nodes and native caret untouched', flush=True)
-    # Real Qt preedit, background snapshot, then composition commit.
-    QApplication.setActiveWindow(panel)
-    panel.view.setFocus(); settle(50)
-    preedit = QInputMethodEvent('\u067e\u0698\u0648\u0647\u0634', [])
-    QApplication.sendEvent(panel.view.focusProxy(), preedit); settle(40)
-    resets = js(panel.page, 'rangeResets')
-    command('task.edit', {'id': task, 'fields': {'obj': 'Background during IME'}}); settle(150)
-    assert js(panel.page, 'rangeResets') == resets
-    event = QInputMethodEvent(); event.setCommitString('\u067e\u0698\u0648\u0647\u0634')
-    QApplication.sendEvent(panel.view.focusProxy(), event); settle(80)
-    actual = js(panel.page, 'document.querySelector("#review-form textarea").value')
-    assert actual.endswith('\u067e\u0698\u0648\u0647\u0634'), (actual, js(panel.page, 'document.activeElement.outerHTML'))
-    print('PASS: native Persian preedit survives a concurrent snapshot', flush=True)
+    expected_notes = {'note': review_text, 'nextDayNote': 'Tomorrow: board check 123 !?\nSecond line'}
+    js(panel.page, 'document.querySelector("#review-form [name=nextDayNote]").focus()')
+    type_text('Tomorrow: board check 123 !?'); press(Qt.Key_Return); type_text('Second line')
+    wait(lambda: service.snapshot()['reviews'][day].get('nextDayNote') == expected_notes['nextDayNote'], 'next-day draft and newline save through actual typing')
+    for index, name in enumerate(['note','nextDayNote','note','nextDayNote']):
+        js(panel.page, 'document.querySelector("#review-form [name=' + name + ']").focus()')
+        press(Qt.Key_End, Qt.ControlModifier)
+        suffix = ' switch-' + str(index)
+        type_text(suffix); expected_notes[name] += suffix
+    wait(lambda: all(service.snapshot()['reviews'][day].get(k) == v for k,v in expected_notes.items()), 'rapid switching preserves both independent drafts')
+    # Real Qt preedit in each field, a background snapshot, then IME commit.
+    for name in ['note','nextDayNote']:
+        expose_panel(); QApplication.setActiveWindow(panel); panel.view.setFocus()
+        js(panel.page, 'document.querySelector("#review-form [name=' + name + ']").focus()')
+        press(Qt.Key_End, Qt.ControlModifier)
+        cursor = js(panel.page, 'document.activeElement.selectionStart')
+        wait(lambda: panel.view.focusProxy().inputMethodQuery(Qt.ImSurroundingText) == expected_notes[name]
+             and panel.view.focusProxy().inputMethodQuery(Qt.ImCursorPosition) == cursor, 'native IME context matches ' + name)
+        preedit = QInputMethodEvent('\u067e\u0698\u0648\u0647\u0634', [])
+        QApplication.sendEvent(panel.view.focusProxy(), preedit); settle(40)
+        resets = js(panel.page, 'rangeResets')
+        command('task.edit', {'id': task, 'fields': {'obj': 'Background during ' + name + ' IME'}}); settle(150)
+        assert js(panel.page, 'rangeResets') == resets
+        event = QInputMethodEvent(); event.setCommitString('\u067e\u0698\u0648\u0647\u0634')
+        QApplication.sendEvent(panel.view.focusProxy(), event)
+        expected_notes[name] += '\u067e\u0698\u0648\u0647\u0634'
+        wait(lambda: service.snapshot()['reviews'][day].get(name) == expected_notes[name], 'Persian commit persists in ' + name)
+    js(panel.page, 'window.savedNextField=document.querySelector("#review-form [name=nextDayNote]")')
+    with patch.object(service, '_write', side_effect=OSError('Synthetic review save failure')):
+        type_text('!')
+        wait(lambda: js(panel.page, '!!document.querySelector("#notice.error") && document.querySelector("#notice").textContent.includes("Synthetic review save failure")'), 'failed review save is visible')
+        assert service.snapshot()['reviews'][day]['nextDayNote'] == expected_notes['nextDayNote']
+        assert js(panel.page, 'savedNextField===document.activeElement && savedNextField===document.querySelector("#review-form [name=nextDayNote]")')
+    type_text(' retry'); expected_notes['nextDayNote'] += '! retry'
+    wait(lambda: all(service.snapshot()['reviews'][day].get(k) == v for k,v in expected_notes.items()), 'retry saves the retained draft without losing the daily note')
+    measurements = json.loads(js(panel.page, 'JSON.stringify({headerReplaced:oldHeader!==document.querySelector("#character").firstChild,headerMutations,rangeResets})'))
+    assert measurements == {'headerReplaced':False,'headerMutations':0,'rangeResets':0}, measurements
+    click('[data-action=review-close]')
+    js(panel.page, 'QUI.navigate("review:"+' + json.dumps(day) + ')')
+    wait(lambda: js(panel.page, '!!document.querySelector("#review-form [name=nextDayNote]")'), 'two-field draft reopens')
+    restored = json.loads(js(panel.page, 'JSON.stringify({note:document.querySelector("#review-form [name=note]").value,nextDayNote:document.querySelector("#review-form [name=nextDayNote]").value})'))
+    assert restored == expected_notes, restored
+    assert json.loads(data_file.read_text(encoding='utf-8'))['reviews'][day]['nextDayNote'] == expected_notes['nextDayNote']
+    js(panel.page, 'window.reviewCaptureStyle=document.createElement("style");reviewCaptureStyle.textContent="textarea{caret-color:transparent!important}";document.head.append(reviewCaptureStyle);document.querySelector("#review-form [name=nextDayNote]").scrollIntoView({block:"center"})')
+    expose_panel()
+    stable_frame().save(str(folder / 'review-two-fields.png'))
+    panel.resize(640,460)
+    wait(viewport_ready, 'small review viewport matches the native view')
+    js(panel.page, 'document.querySelector("#review-form [name=nextDayNote]").scrollIntoView({block:"center"})')
+    stable_frame().save(str(folder / 'review-two-fields-small.png'))
+    panel.resize(1300,900)
+    js(panel.page, 'reviewCaptureStyle.remove()')
     click('[data-action=review-close]')
     # The DOM close event can be delayed by rendering. Suppress it entirely to
     # verify lifecycle cleanup does not depend on the next painted frame.
@@ -259,10 +303,13 @@ try:
         type_text('Paint cycle ' + str(index) + ' - text 123 !?')
         press(Qt.Key_A, Qt.ControlModifier); type_text('Replaced selection ' + str(index))
         press(Qt.Key_Home); press(Qt.Key_Delete); press(Qt.Key_End); press(Qt.Key_Backspace)
+        edited_text = ('eplaced selection ' + str(index))[:-1]
+        wait(lambda: js(panel.page, 'document.activeElement.name === "title" && document.activeElement.value === ' + json.dumps(edited_text)
+                        + ' && document.activeElement.selectionStart === ' + str(len(edited_text))), 'queued edit keys reach the title before the background snapshot')
         js(panel.page, 'window.draftNode=document.querySelector("dialog [name=title]");window.draftValue=draftNode.value;window.draftCaret=draftNode.selectionStart')
         command('task.edit', {'id': task, 'fields': {'obj': 'Concurrent ' + str(index)}})
         settle(100)
-        assert js(panel.page, 'draftNode===document.querySelector("dialog [name=title]") && draftNode.value===draftValue && document.activeElement===draftNode && draftNode.selectionStart===draftCaret')
+        assert js(panel.page, 'draftNode===document.querySelector("dialog [name=title]") && draftNode.value===draftValue && document.activeElement===draftNode && draftNode.selectionStart===draftCaret'), js(panel.page, 'JSON.stringify({sameNode:draftNode===document.querySelector("dialog [name=title]"),value:draftNode.value,expected:draftValue,focus:document.activeElement.name,caret:draftNode.selectionStart,expectedCaret:draftCaret,visibility:document.visibilityState})')
         if index % 4 == 0:
             QTest.mouseClick(panel.repair_button, Qt.LeftButton); settle(80)
             assert js(panel.page, 'draftNode.value===draftValue && draftNode.selectionStart===draftCaret')

@@ -21,17 +21,32 @@ def configure_startup(enabled: bool, base: Path = BASE, startup_dir: Path | None
     """Only manage this application's named startup shortcut; no registry changes."""
     if os.name != "nt":
         return
+    base = Path(base).resolve()
     folder = startup_dir or Path(os.environ["APPDATA"]) / "Microsoft/Windows/Start Menu/Programs/Startup"
     shortcut = folder / "Quest HUD.lnk"
-    if not enabled:
-        if shortcut.exists():
-            # Check the shortcut's target before removing anything.
-            script = "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:QH_LINK); if($s.TargetPath -eq $env:QH_TARGET){Remove-Item -LiteralPath $env:QH_LINK} else {throw 'Startup shortcut belongs to another installation'}"
-        else:
-            return
-    else:
-        script = "$w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut($env:QH_LINK); $s.TargetPath=$env:QH_TARGET; $s.WorkingDirectory=$env:QH_BASE; $s.Save()"
-    env = dict(os.environ, QH_LINK=str(shortcut), QH_TARGET=str(base / "start-hud.vbs"), QH_BASE=str(base))
+    if not enabled and not shortcut.exists():
+        return
+    if enabled:
+        folder.mkdir(parents=True, exist_ok=True)
+    # Both known launchers belong to this installation. Never replace another
+    # installation's link, including when enabling rather than only disabling.
+    script = """$ErrorActionPreference='Stop'
+$w=New-Object -ComObject WScript.Shell
+$exists=Test-Path -LiteralPath $env:QH_LINK
+$s=$w.CreateShortcut($env:QH_LINK)
+if($exists -and $s.TargetPath -notin @($env:QH_TARGET,$env:QH_LEGACY)){throw 'Startup shortcut belongs to another installation'}
+if($env:QH_ENABLED -eq '1'){
+  if(!(Test-Path -LiteralPath $env:QH_TARGET -PathType Leaf)){throw 'Stable launcher is missing; reinstall QuestHUD'}
+  $s.TargetPath=$env:QH_TARGET
+  $s.Arguments=''
+  $s.WorkingDirectory=$env:QH_BASE
+  $s.Save()
+  $saved=$w.CreateShortcut($env:QH_LINK)
+  if($saved.TargetPath -ne $env:QH_TARGET -or $saved.WorkingDirectory -ne $env:QH_BASE -or $saved.Arguments){throw 'Startup shortcut verification failed'}
+}elseif($exists){Remove-Item -LiteralPath $env:QH_LINK}
+"""
+    env = dict(os.environ, QH_LINK=str(shortcut), QH_TARGET=str(base / "start-stable.vbs"),
+               QH_LEGACY=str(base / "start-hud.vbs"), QH_BASE=str(base), QH_ENABLED='1' if enabled else '0')
     subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], env=env,
                    check=True, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
 
